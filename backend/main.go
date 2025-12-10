@@ -14,8 +14,14 @@ import (
 )
 
 type Item struct {
-	ID   int    `json:"id"`
-	Name string `json:"name"`
+	ID          int    `json:"id"`
+	Lastname    string `json:"lastname"`
+	Firstname   string `json:"firstname"`
+	Middlename  string `json:"middlename"`
+	Suffix      string `json:"suffix"`
+	Birthdate   string `json:"birthdate"`
+	Sex         string `json:"sex"`
+	CivilStatus string `json:"civil_status"`
 }
 
 var db *sql.DB
@@ -69,7 +75,13 @@ func createTable() {
 	query := `
 		CREATE TABLE IF NOT EXISTS items (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL,
+			lastname TEXT NOT NULL,
+			firstname TEXT NOT NULL,
+			middlename TEXT,
+			suffix TEXT,
+			birthdate TEXT,
+			sex TEXT,
+			civil_status TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)
 	`
@@ -87,7 +99,7 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 func getItems(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	rows, err := db.Query("SELECT id, name FROM items ORDER BY id DESC")
+	rows, err := db.Query("SELECT id, lastname, firstname, middlename, suffix, birthdate, sex, civil_status FROM items ORDER BY id DESC")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -97,7 +109,7 @@ func getItems(w http.ResponseWriter, r *http.Request) {
 	items := []Item{}
 	for rows.Next() {
 		var item Item
-		err := rows.Scan(&item.ID, &item.Name)
+		err := rows.Scan(&item.ID, &item.Lastname, &item.Firstname, &item.Middlename, &item.Suffix, &item.Birthdate, &item.Sex, &item.CivilStatus)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -118,12 +130,15 @@ func createItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if item.Name == "" {
-		http.Error(w, "Name is required", http.StatusBadRequest)
+	if item.Lastname == "" || item.Firstname == "" {
+		http.Error(w, "Lastname and Firstname are required", http.StatusBadRequest)
 		return
 	}
 
-	result, err := db.Exec("INSERT INTO items (name) VALUES (?)", item.Name)
+	result, err := db.Exec(
+		"INSERT INTO items (lastname, firstname, middlename, suffix, birthdate, sex, civil_status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		item.Lastname, item.Firstname, item.Middlename, item.Suffix, item.Birthdate, item.Sex, item.CivilStatus,
+	)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -157,12 +172,15 @@ func updateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if item.Name == "" {
-		http.Error(w, "Name is required", http.StatusBadRequest)
+	if item.Lastname == "" || item.Firstname == "" {
+		http.Error(w, "Lastname and Firstname are required", http.StatusBadRequest)
 		return
 	}
 
-	result, err := db.Exec("UPDATE items SET name = ? WHERE id = ?", item.Name, id)
+	result, err := db.Exec(
+		"UPDATE items SET lastname = ?, firstname = ?, middlename = ?, suffix = ?, birthdate = ?, sex = ?, civil_status = ? WHERE id = ?",
+		item.Lastname, item.Firstname, item.Middlename, item.Suffix, item.Birthdate, item.Sex, item.CivilStatus, id,
+	)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
