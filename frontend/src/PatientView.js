@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { itemService } from './services/api';
+import FamilyHistory from './FamilyHistory';
 import './PatientView.css';
 
 function PatientView() {
@@ -433,6 +434,10 @@ function PatientView() {
               </div>
             </div>
           </div>
+        )}
+
+        {activeTab === 'Profiling' && activeSubTab === 'Family' && (
+          <FamilyHistory />
         )}
 
         {activeTab === 'SOAP' && (
