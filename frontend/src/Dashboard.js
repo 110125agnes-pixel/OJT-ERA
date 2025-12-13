@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import './Dashboard.css';
 import Inventory from './Inventory';
 import EmployeeProfiling from './EmployeeProfiling';
+import FamilyHistory from './FamilyHistory';
 
 function Dashboard({ onLogout }) {
   const [activeModule, setActiveModule] = useState('home');
@@ -12,6 +13,8 @@ function Dashboard({ onLogout }) {
         return <Inventory />;
       case 'profiling':
         return <EmployeeProfiling />;
+      case 'familyhistory':
+        return <FamilyHistory />;
       case 'home':
       default:
         return (
@@ -27,6 +30,11 @@ function Dashboard({ onLogout }) {
                 <div className="card-icon">👥</div>
                 <h3>Patient Management</h3>
                 <p>View and manage patient information</p>
+              </div>
+              <div className="dashboard-card" onClick={() => setActiveModule('familyhistory')}>
+                <div className="card-icon">📋</div>
+                <h3>Family History</h3>
+                <p>Record patient family medical history</p>
               </div>
             </div>
           </div>
@@ -58,6 +66,12 @@ function Dashboard({ onLogout }) {
             onClick={() => setActiveModule('profiling')}
           >
             👥 Patients
+          </button>
+          <button 
+            className={activeModule === 'familyhistory' ? 'nav-item active' : 'nav-item'}
+            onClick={() => setActiveModule('familyhistory')}
+          >
+            📋 Family History
           </button>
         </div>
         <button className="logout-btn" onClick={onLogout}>
