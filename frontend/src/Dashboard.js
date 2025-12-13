@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import './Dashboard.css';
 import Inventory from './Inventory';
 import EmployeeProfiling from './EmployeeProfiling';
+import Immunization from './Immunization';
+import FemaleHistory from './FemaleHistory';
 
 function Dashboard({ onLogout }) {
   const [activeModule, setActiveModule] = useState('home');
@@ -12,6 +14,10 @@ function Dashboard({ onLogout }) {
         return <Inventory />;
       case 'profiling':
         return <EmployeeProfiling />;
+      case 'immunization':
+        return <Immunization />;
+      case 'female':
+        return <FemaleHistory />;
       case 'home':
       default:
         return (
@@ -27,6 +33,16 @@ function Dashboard({ onLogout }) {
                 <div className="card-icon">👥</div>
                 <h3>Employee Profiling</h3>
                 <p>View and manage employee information</p>
+              </div>
+              <div className="dashboard-card" onClick={() => setActiveModule('immunization')}>
+                <div className="card-icon">💉</div>
+                <h3>Immunization</h3>
+                <p>Record vaccinations across age groups</p>
+              </div>
+              <div className="dashboard-card" onClick={() => setActiveModule('female')}>
+                <div className="card-icon">♀️</div>
+                <h3>Female History</h3>
+                <p>Capture menstrual and pregnancy history</p>
               </div>
             </div>
           </div>
@@ -58,6 +74,18 @@ function Dashboard({ onLogout }) {
             onClick={() => setActiveModule('profiling')}
           >
             👥 Employees
+          </button>
+          <button 
+            className={activeModule === 'immunization' ? 'nav-item active' : 'nav-item'}
+            onClick={() => setActiveModule('immunization')}
+          >
+            💉 Immunization
+          </button>
+          <button 
+            className={activeModule === 'female' ? 'nav-item active' : 'nav-item'}
+            onClick={() => setActiveModule('female')}
+          >
+            ♀️ Female
           </button>
         </div>
         <button className="logout-btn" onClick={onLogout}>

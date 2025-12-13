@@ -1,0 +1,13 @@
+.immu-container { padding: 16px; }
+.immu-header { display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #ddd; padding-bottom: 8px; }
+.immu-tabs { display: flex; gap: 8px; }
+.immu-tab { padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; background: #f7f7f7; font-size: 12px; }
+.immu-tab.active { background: #e6f0ff; border-color: #7aa7ff; }
+.immu-sections { margin-top: 12px; display: grid; gap: 16px; }
+.immu-section { border: 1px solid #ddd; border-radius: 6px; padding: 12px; background: #fff; }
+.immu-grid { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 8px 16px; }
+.immu-checkbox { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.immu-notes { width: 100%; min-height: 120px; resize: vertical; font-size: 14px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+.immu-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+.immu-datetime { display: flex; gap: 8px; }
+.immu-close { padding: 8px 12px; border: 1px solid #ccc; background: #f7f7f7; border-radius: 4px; }
