@@ -35,6 +35,55 @@ function PatientView() {
     others: false
   });
 
+  // Surgery history state
+  const [surgeryRecords, setSurgeryRecords] = useState([
+    { id: 1, code: 'OPERA10080', description: 'Incision and drainage of pilonidal cyst', displaySort: 0, date: '11/14/2025 07:34:00 AM', detailedNotes: 'Graft; rib cartilage, autogenous, to face, chin, nose or ear (includes obtaining graft)' },
+    { id: 2, code: 'OPERA21230', description: 'Graft; rib cartilage, autogenous, to face, chin, nose or ear (includes obtaining graft)', displaySort: 1, date: '11/14/2025 07:34:00 AM', detailedNotes: 'Graft; rib cartilage, autogenous, to face, chin, nose or ear (includes obtaining graft)' }
+  ]);
+
+  const [surgeryForm, setSurgeryForm] = useState({
+    code: '',
+    description: '',
+    surgeryDateTime: '',
+    detailedNotes: ''
+  });
+
+  const handleAddSurgery = () => {
+    if (surgeryForm.code && surgeryForm.description && surgeryForm.surgeryDateTime) {
+      const newSurgery = {
+        id: surgeryRecords.length + 1,
+        code: surgeryForm.code,
+        description: surgeryForm.description,
+        displaySort: surgeryRecords.length,
+        date: surgeryForm.surgeryDateTime,
+        detailedNotes: surgeryForm.detailedNotes
+      };
+      setSurgeryRecords([...surgeryRecords, newSurgery]);
+      setSurgeryForm({ code: '', description: '', surgeryDateTime: '', detailedNotes: '' });
+      setSelectedSurgeryId(null);
+    }
+  };
+
+  const handleDeleteSurgery = (id) => {
+    setSurgeryRecords(surgeryRecords.filter(s => s.id !== id));
+    if (selectedSurgeryId === id) {
+      setSurgeryForm({ code: '', description: '', surgeryDateTime: '', detailedNotes: '' });
+      setSelectedSurgeryId(null);
+    }
+  };
+
+  const handleSelectSurgery = (surgery) => {
+    setSelectedSurgeryId(surgery.id);
+    setSurgeryForm({
+      code: surgery.code,
+      description: surgery.description,
+      surgeryDateTime: surgery.date,
+      detailedNotes: surgery.detailedNotes || ''
+    });
+  };
+
+  const [selectedSurgeryId, setSelectedSurgeryId] = useState(null);
+
   useEffect(() => {
     fetchPatient();
   }, [id]);
@@ -428,6 +477,109 @@ function PatientView() {
                         <td>Diabetes Mellitus</td>
                       </tr>
                     )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'Profiling' && activeSubTab === 'Surgery' && (
+          <div className="surgery-content">
+            <div className="surgery-section">
+              <div className="surgery-button-label">
+                <button className="sub-tab">Surgery History</button>
+              </div>
+              
+              <div className="surgery-form">
+                <div className="surgery-form-row">
+                  <div className="surgery-form-field">
+                    <input
+                      type="text"
+                      placeholder="Code"
+                      value={surgeryForm.code}
+                      onChange={(e) => setSurgeryForm({...surgeryForm, code: e.target.value})}
+                      style={{ width: '200px' }}
+                    />
+                  </div>
+                  <div className="surgery-form-field" style={{ flex: 1 }}>
+                    <input
+                      type="text"
+                      placeholder="Description"
+                      value={surgeryForm.description}
+                      onChange={(e) => setSurgeryForm({...surgeryForm, description: e.target.value})}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                  <div className="surgery-form-field">
+                    <label style={{ marginRight: '10px' }}>Surgery Date and Time:</label>
+                    <input
+                      type="datetime-local"
+                      value={surgeryForm.surgeryDateTime}
+                      onChange={(e) => setSurgeryForm({...surgeryForm, surgeryDateTime: e.target.value})}
+                      style={{ width: '200px' }}
+                    />
+                  </div>
+                </div>
+
+                <div className="surgery-details-row">
+                  <textarea
+                    placeholder="Enter detailed surgery notes here..."
+                    value={surgeryForm.detailedNotes}
+                    onChange={(e) => setSurgeryForm({...surgeryForm, detailedNotes: e.target.value})}
+                    rows="3"
+                    style={{ width: '100%', padding: '8px' }}
+                  ></textarea>
+                  
+                  <div className="surgery-action-buttons">
+                    <button 
+                      className="surgery-action-btn add-btn"
+                      onClick={handleAddSurgery}
+                      title="Add Surgery"
+                    >
+                      ➕
+                    </button>
+                    <button 
+                      className="surgery-action-btn save-btn"
+                      title="Save Surgery"
+                    >
+                      💾
+                    </button>
+                    <button 
+                      className="surgery-action-btn delete-btn"
+                      onClick={() => selectedSurgeryId && handleDeleteSurgery(selectedSurgeryId)}
+                      title="Delete Surgery"
+                    >
+                      ❌
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="surgery-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Code</th>
+                      <th>Description</th>
+                      <th>Display Sort</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {surgeryRecords.map((surgery) => (
+                      <tr 
+                        key={surgery.id}
+                        onClick={() => handleSelectSurgery(surgery)}
+                        className={selectedSurgeryId === surgery.id ? 'selected' : ''}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <td>{surgery.code}</td>
+                        <td>{surgery.description}</td>
+                        <td>{surgery.displaySort}</td>
+                        <td>{surgery.date}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>

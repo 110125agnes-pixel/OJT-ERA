@@ -302,6 +302,151 @@
   font-size: 16px;
 }
 
+/* Surgery Section Styles */
+.surgery-content {
+  background: white;
+  padding: 15px;
+  min-height: 400px;
+}
+
+.surgery-section {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.surgery-button-label button {
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.surgery-form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.surgery-form-row {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+}
+
+.surgery-form-field {
+  display: flex;
+  align-items: center;
+}
+
+.surgery-form-field input {
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.surgery-form-field label {
+  font-size: 14px;
+  color: #333;
+  white-space: nowrap;
+}
+
+.surgery-details-row {
+  display: flex;
+  gap: 15px;
+}
+
+.surgery-details-row textarea {
+  flex: 1;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  resize: vertical;
+  font-family: Arial, sans-serif;
+}
+
+.surgery-action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.surgery-action-btn {
+  width: 40px;
+  height: 40px;
+  border: 2px solid #ccc;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.surgery-action-btn:hover {
+  background: #f0f0f0;
+  border-color: #999;
+}
+
+.surgery-action-btn.add-btn:hover {
+  background: #d4edda;
+  border-color: #28a745;
+}
+
+.surgery-action-btn.save-btn:hover {
+  background: #d1ecf1;
+  border-color: #17a2b8;
+}
+
+.surgery-action-btn.delete-btn:hover {
+  background: #f8d7da;
+  border-color: #dc3545;
+}
+
+.surgery-table {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.surgery-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.surgery-table thead {
+  background: #f8f9fa;
+}
+
+.surgery-table th {
+  padding: 10px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 13px;
+  color: #333;
+  border-bottom: 2px solid #dee2e6;
+}
+
+.surgery-table td {
+  padding: 10px;
+  font-size: 13px;
+  color: #333;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.surgery-table tbody tr:hover {
+  background: #f9f9f9;
+}
+
+.surgery-table tbody tr.selected {
+  background: #cfe2ff;
+}
+
 .footer-info {
   display: flex;
   justify-content: space-between;
