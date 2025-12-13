@@ -55,3 +55,30 @@ export const inventoryService = {
     return response.data;
   }
 };
+
+// Surgery API service
+export const surgeryService = {
+  // Get all surgeries
+  getAllSurgeries: async () => {
+    const response = await axios.get(`${API_BASE_URL}/surgeries`);
+    return response.data;
+  },
+
+  // Create a new surgery
+  createSurgery: async (surgery) => {
+    const response = await axios.post(`${API_BASE_URL}/surgeries`, surgery);
+    return response.data;
+  },
+
+  // Update an existing surgery
+  updateSurgery: async (id, surgery) => {
+    const response = await axios.put(`${API_BASE_URL}/surgeries/${id}`, surgery);
+    return response.data;
+  },
+
+  // Delete a surgery
+  deleteSurgery: async (id) => {
+    const response = await axios.delete(`${API_BASE_URL}/surgeries/${id}`);
+    return response.data;
+  }
+};

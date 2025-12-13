@@ -25,9 +25,28 @@ CREATE TABLE IF NOT EXISTS inventory (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Surgery table
+CREATE TABLE IF NOT EXISTS surgeries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_name TEXT NOT NULL,
+    surgery_type TEXT NOT NULL,
+    surgeon_name TEXT NOT NULL,
+    surgery_date TEXT,
+    surgery_time TEXT,
+    duration TEXT,
+    status TEXT,
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Sample data (optional)
 
 INSERT INTO items (lastname, firstname, middlename, suffix, birthdate, sex, civil_status) VALUES 
     ('Doe', 'John', 'A', '', '1990-01-01', 'Male', 'Single'),
     ('Smith', 'Jane', 'B', 'Jr.', '1985-05-15', 'Female', 'Married'),
     ('Lee', 'Chris', '', '', '2000-12-31', 'Other', 'Single');
+
+INSERT INTO surgeries (patient_name, surgery_type, surgeon_name, surgery_date, surgery_time, duration, status, notes) VALUES
+    ('John Doe', 'Cardiac', 'Dr. Smith', '2025-12-15', '09:00', '3 hours', 'Scheduled', 'Routine cardiac procedure'),
+    ('Jane Williams', 'Orthopedic', 'Dr. Johnson', '2025-12-14', '14:30', '2 hours', 'Completed', 'Hip replacement successful');

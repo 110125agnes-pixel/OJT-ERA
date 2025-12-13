@@ -1,0 +1,275 @@
+.surgery-container {
+  background: white;
+  border-radius: 12px;
+  padding: 30px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.surgery-container h2 {
+  color: #333;
+  margin: 0 0 8px 0;
+  font-size: 28px;
+}
+
+.subtitle {
+  color: #666;
+  margin: 0 0 24px 0;
+  font-size: 14px;
+}
+
+.error {
+  background: #fee;
+  color: #c33;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  border-left: 4px solid #c33;
+}
+
+.add-form {
+  background: #f9f9f9;
+  padding: 24px;
+  border-radius: 12px;
+  margin-bottom: 30px;
+}
+
+.add-form h3 {
+  margin: 0 0 20px 0;
+  color: #333;
+  font-size: 20px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.form-grid input,
+.form-grid select {
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: all 0.3s;
+}
+
+.form-grid input:focus,
+.form-grid select:focus {
+  outline: none;
+  border-color: #4CAF50;
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
+}
+
+.notes-input {
+  grid-column: 1 / -1;
+}
+
+.submit-btn {
+  background: #4CAF50;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.submit-btn:hover:not(:disabled) {
+  background: #45a049;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(76, 175, 80, 0.3);
+}
+
+.submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.surgery-list-section {
+  margin-top: 30px;
+}
+
+.list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.list-header h3 {
+  margin: 0;
+  color: #333;
+  font-size: 20px;
+}
+
+.search-input {
+  padding: 10px 16px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  min-width: 300px;
+  transition: all 0.3s;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #4CAF50;
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
+}
+
+.loading,
+.no-data {
+  text-align: center;
+  padding: 40px;
+  color: #666;
+  font-size: 14px;
+}
+
+.table-wrapper {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.surgery-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.surgery-table thead {
+  background: #f5f5f5;
+}
+
+.surgery-table th {
+  padding: 14px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #333;
+  border-bottom: 2px solid #e0e0e0;
+  white-space: nowrap;
+}
+
+.surgery-table tbody tr {
+  border-bottom: 1px solid #f0f0f0;
+  transition: background 0.2s;
+}
+
+.surgery-table tbody tr:hover {
+  background: #fafafa;
+}
+
+.surgery-table td {
+  padding: 14px 12px;
+  color: #555;
+}
+
+.badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge.surgery-type {
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+.badge.status-scheduled {
+  background: #fff3e0;
+  color: #f57c00;
+}
+
+.badge.status-in-progress {
+  background: #e1f5fe;
+  color: #0277bd;
+}
+
+.badge.status-completed {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.badge.status-cancelled {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.badge.status-postponed {
+  background: #f3e5f5;
+  color: #7b1fa2;
+}
+
+.edit-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.edit-input:focus {
+  outline: none;
+  border-color: #4CAF50;
+}
+
+.edit-btn,
+.delete-btn,
+.save-btn,
+.cancel-btn {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 6px;
+  margin: 0 2px;
+  transition: transform 0.2s;
+}
+
+.edit-btn:hover,
+.delete-btn:hover,
+.save-btn:hover,
+.cancel-btn:hover {
+  transform: scale(1.2);
+}
+
+.edit-btn {
+  filter: grayscale(0.3);
+}
+
+.delete-btn:hover {
+  filter: brightness(1.2);
+}
+
+@media (max-width: 768px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .list-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search-input {
+    min-width: 100%;
+  }
+
+  .table-wrapper {
+    font-size: 12px;
+  }
+
+  .surgery-table th,
+  .surgery-table td {
+    padding: 10px 8px;
+  }
+}
