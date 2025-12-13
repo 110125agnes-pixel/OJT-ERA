@@ -1,24 +1,32 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './EmployeeProfiling.css';
 import { itemService } from './services/api';
 import ItemForm from './components/ItemForm';
 import ItemEditForm from './components/ItemEditForm';
 
 function EmployeeProfiling() {
+  const navigate = useNavigate();
   const [employees, setEmployees] = useState([]);
   const [newEmployee, setNewEmployee] = useState({
+    caseNo: '',
+    hospitalNo: '',
     lastname: '',
     firstname: '',
     middlename: '',
     suffix: '',
     birthdate: '',
+    age: '',
+    room: '',
+    admissionDate: '',
+    dischargeDate: '',
     sex: '',
-    civil_status: ''
+    height: '',
+    weight: '',
+    complaint: ''
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [editingId, setEditingId] = useState(null);
-  const [editingEmployee, setEditingEmployee] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
   const sexOptions = ['', 'Male', 'Female', 'Other'];
@@ -53,13 +61,21 @@ function EmployeeProfiling() {
       const data = await itemService.createItem(newEmployee);
       setEmployees([...employees, data]);
       setNewEmployee({
+        caseNo: '',
+        hospitalNo: '',
         lastname: '',
         firstname: '',
         middlename: '',
         suffix: '',
         birthdate: '',
+        age: '',
+        room: '',
+        admissionDate: '',
+        dischargeDate: '',
         sex: '',
-        civil_status: ''
+        height: '',
+        weight: '',
+        complaint: ''
       });
       setError('');
     } catch (err) {
@@ -87,34 +103,8 @@ function EmployeeProfiling() {
     }
   };
 
-  const startEditing = (employee) => {
-    setEditingId(employee.id);
-    setEditingEmployee({ ...employee });
-  };
-
-  const cancelEditing = () => {
-    setEditingId(null);
-    setEditingEmployee(null);
-  };
-
-  const updateEmployee = async (id) => {
-    if (!editingEmployee.lastname.trim() || !editingEmployee.firstname.trim()) {
-      setError('Lastname and Firstname are required');
-      return;
-    }
-    try {
-      setLoading(true);
-      const data = await itemService.updateItem(id, editingEmployee);
-      setEmployees(employees.map(emp => emp.id === id ? data : emp));
-      setEditingId(null);
-      setEditingEmployee(null);
-      setError('');
-    } catch (err) {
-      setError('Failed to update employee: ' + (err.response?.data?.error || err.message));
-      console.error('Error updating employee:', err);
-    } finally {
-      setLoading(false);
-    }
+  const viewPatient = (patient) => {
+    navigate(`/patient/${patient.id}`);
   };
 
   const filteredEmployees = employees.filter(emp =>
@@ -124,70 +114,148 @@ function EmployeeProfiling() {
 
   return (
     <div className="profiling-container">
-      <h2>👥 Employee Management</h2>
-      <p className="subtitle">Create and manage employee profiles</p>
+      <h2>👥 Patient Management</h2>
+      <p className="subtitle">Create and manage patient profiles</p>
       
       {error && <div className="error">{error}</div>}
       
       <form onSubmit={addEmployee} className="add-form">
-        <h3>Add New Employee</h3>
+        <h3>Add New Patient</h3>
         <div className="form-grid">
-          <input
-            type="text"
-            placeholder="Last Name *"
-            value={newEmployee.lastname}
-            onChange={(e) => setNewEmployee({...newEmployee, lastname: e.target.value})}
-            required
-          />
-          <input
-            type="text"
-            placeholder="First Name *"
-            value={newEmployee.firstname}
-            onChange={(e) => setNewEmployee({...newEmployee, firstname: e.target.value})}
-            required
-          />
-          <input
-            type="text"
-            placeholder="Middle Name"
-            value={newEmployee.middlename}
-            onChange={(e) => setNewEmployee({...newEmployee, middlename: e.target.value})}
-          />
-          <input
-            type="text"
-            placeholder="Suffix"
-            value={newEmployee.suffix}
-            onChange={(e) => setNewEmployee({...newEmployee, suffix: e.target.value})}
-          />
-          <input
-            type="date"
-            placeholder="Birthdate"
-            value={newEmployee.birthdate}
-            onChange={(e) => setNewEmployee({...newEmployee, birthdate: e.target.value})}
-          />
-          <select
-            value={newEmployee.sex}
-            onChange={(e) => setNewEmployee({...newEmployee, sex: e.target.value})}
-          >
-            {sexOptions.map((option, idx) => (
-              <option key={idx} value={option}>
-                {option || 'Select Sex'}
-              </option>
-            ))}
-          </select>
-          <select
-            value={newEmployee.civil_status}
-            onChange={(e) => setNewEmployee({...newEmployee, civil_status: e.target.value})}
-          >
-            {civilStatusOptions.map((option, idx) => (
-              <option key={idx} value={option}>
-                {option || 'Select Civil Status'}
-              </option>
-            ))}
-          </select>
+          <div className="form-field">
+            <label>Case No. *</label>
+            <input
+              type="text"
+              value={newEmployee.caseNo}
+              onChange={(e) => setNewEmployee({...newEmployee, caseNo: e.target.value})}
+              required
+            />
+          </div>
+          <div className="form-field">
+            <label>Hospital No.</label>
+            <input
+              type="text"
+              value={newEmployee.hospitalNo}
+              onChange={(e) => setNewEmployee({...newEmployee, hospitalNo: e.target.value})}
+            />
+          </div>
+          <div className="form-field">
+            <label>Last Name *</label>
+            <input
+              type="text"
+              value={newEmployee.lastname}
+              onChange={(e) => setNewEmployee({...newEmployee, lastname: e.target.value})}
+              required
+            />
+          </div>
+          <div className="form-field">
+            <label>First Name *</label>
+            <input
+              type="text"
+              value={newEmployee.firstname}
+              onChange={(e) => setNewEmployee({...newEmployee, firstname: e.target.value})}
+              required
+            />
+          </div>
+          <div className="form-field">
+            <label>Middle Name</label>
+            <input
+              type="text"
+              value={newEmployee.middlename}
+              onChange={(e) => setNewEmployee({...newEmployee, middlename: e.target.value})}
+            />
+          </div>
+          <div className="form-field">
+            <label>Suffix</label>
+            <input
+              type="text"
+              value={newEmployee.suffix}
+              onChange={(e) => setNewEmployee({...newEmployee, suffix: e.target.value})}
+            />
+          </div>
+          <div className="form-field">
+            <label>Birthdate *</label>
+            <input
+              type="date"
+              value={newEmployee.birthdate}
+              onChange={(e) => setNewEmployee({...newEmployee, birthdate: e.target.value})}
+              required
+            />
+          </div>
+          <div className="form-field">
+            <label>Age</label>
+            <input
+              type="text"
+              value={newEmployee.age}
+              onChange={(e) => setNewEmployee({...newEmployee, age: e.target.value})}
+            />
+          </div>
+          <div className="form-field">
+            <label>Room</label>
+            <input
+              type="text"
+              value={newEmployee.room}
+              onChange={(e) => setNewEmployee({...newEmployee, room: e.target.value})}
+            />
+          </div>
+          <div className="form-field">
+            <label>Admission Date</label>
+            <input
+              type="datetime-local"
+              value={newEmployee.admissionDate}
+              onChange={(e) => setNewEmployee({...newEmployee, admissionDate: e.target.value})}
+            />
+          </div>
+          <div className="form-field">
+            <label>Discharge Date</label>
+            <input
+              type="datetime-local"
+              value={newEmployee.dischargeDate}
+              onChange={(e) => setNewEmployee({...newEmployee, dischargeDate: e.target.value})}
+            />
+          </div>
+          <div className="form-field">
+            <label>Sex</label>
+            <select
+              value={newEmployee.sex}
+              onChange={(e) => setNewEmployee({...newEmployee, sex: e.target.value})}
+            >
+              <option value="">Select Sex</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select>
+          </div>
+          <div className="form-field">
+            <label>Height (cm)</label>
+            <input
+              type="text"
+              value={newEmployee.height}
+              onChange={(e) => setNewEmployee({...newEmployee, height: e.target.value})}
+            />
+          </div>
+          <div className="form-field">
+            <label>Weight (kg)</label>
+            <input
+              type="text"
+              value={newEmployee.weight}
+              onChange={(e) => setNewEmployee({...newEmployee, weight: e.target.value})}
+            />
+          </div>
+          <div className="form-field">
+            <label>Complaint</label>
+            <input
+              type="text"
+              value={newEmployee.complaint}
+              onChange={(e) => setNewEmployee({...newEmployee, complaint: e.target.value})}
+            />
+          </div>
+          <div className="form-field">
+            <label>&nbsp;</label>
+            <button type="submit" disabled={loading} className="submit-btn">
+              {loading ? 'Adding...' : 'Add Patient'}
+            </button>
+          </div>
         </div>
-        <button type="submit" disabled={loading} className="submit-btn">
-          {loading ? 'Adding...' : 'Add Employee'}
-        </button>
       </form>
 
       <div className="search-section">
@@ -201,65 +269,31 @@ function EmployeeProfiling() {
       </div>
 
       <div className="employees-section">
-        <h3>Employee List ({filteredEmployees.length})</h3>
+        <h3>Patient List ({filteredEmployees.length})</h3>
         {loading && <p>Loading...</p>}
         <div className="employees-table-container">
           <table className="employees-table">
             <thead>
               <tr>
-                <th>ID</th>
-                <th>Last Name</th>
-                <th>First Name</th>
-                <th>Middle Name</th>
-                <th>Suffix</th>
+                <th>Case No.</th>
+                <th>Full Name</th>
                 <th>Birthdate</th>
-                <th>Sex</th>
-                <th>Civil Status</th>
+                <th>Room</th>
+                <th>Admission Date</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredEmployees.map(emp => (
                 <tr key={emp.id}>
-                  {editingId === emp.id ? (
-                    <>
-                      <td>{emp.id}</td>
-                      <td><input value={editingEmployee.lastname} onChange={(e) => setEditingEmployee({...editingEmployee, lastname: e.target.value})} /></td>
-                      <td><input value={editingEmployee.firstname} onChange={(e) => setEditingEmployee({...editingEmployee, firstname: e.target.value})} /></td>
-                      <td><input value={editingEmployee.middlename} onChange={(e) => setEditingEmployee({...editingEmployee, middlename: e.target.value})} /></td>
-                      <td><input value={editingEmployee.suffix} onChange={(e) => setEditingEmployee({...editingEmployee, suffix: e.target.value})} /></td>
-                      <td><input type="date" value={editingEmployee.birthdate} onChange={(e) => setEditingEmployee({...editingEmployee, birthdate: e.target.value})} /></td>
-                      <td>
-                        <select value={editingEmployee.sex} onChange={(e) => setEditingEmployee({...editingEmployee, sex: e.target.value})}>
-                          {sexOptions.map((option, idx) => <option key={idx} value={option}>{option || 'Select'}</option>)}
-                        </select>
-                      </td>
-                      <td>
-                        <select value={editingEmployee.civil_status} onChange={(e) => setEditingEmployee({...editingEmployee, civil_status: e.target.value})}>
-                          {civilStatusOptions.map((option, idx) => <option key={idx} value={option}>{option || 'Select'}</option>)}
-                        </select>
-                      </td>
-                      <td>
-                        <button onClick={() => updateEmployee(emp.id)} className="save-btn">Save</button>
-                        <button onClick={cancelEditing} className="cancel-btn">Cancel</button>
-                      </td>
-                    </>
-                  ) : (
-                    <>
-                      <td>{emp.id}</td>
-                      <td>{emp.lastname}</td>
-                      <td>{emp.firstname}</td>
-                      <td>{emp.middlename}</td>
-                      <td>{emp.suffix}</td>
-                      <td>{emp.birthdate}</td>
-                      <td>{emp.sex}</td>
-                      <td>{emp.civil_status}</td>
-                      <td>
-                        <button onClick={() => startEditing(emp)} className="edit-btn">Edit</button>
-                        <button onClick={() => deleteEmployee(emp.id)} className="delete-btn">Delete</button>
-                      </td>
-                    </>
-                  )}
+                  <td>{emp.caseNo}</td>
+                  <td>{`${emp.lastname}, ${emp.firstname} ${emp.middlename || ''} ${emp.suffix || ''}`.trim()}</td>
+                  <td>{emp.birthdate}</td>
+                  <td>{emp.room}</td>
+                  <td>{emp.admissionDate ? new Date(emp.admissionDate).toLocaleString() : ''}</td>
+                  <td>
+                    <button onClick={() => viewPatient(emp)} className="view-btn">View</button>
+                  </td>
                 </tr>
               ))}
             </tbody>

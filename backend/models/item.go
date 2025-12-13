@@ -4,14 +4,22 @@ import "database/sql"
 
 // Item represents an item in the database
 type Item struct {
-	ID          int    `json:"id"`
-	Lastname    string `json:"lastname"`
-	Firstname   string `json:"firstname"`
-	Middlename  string `json:"middlename"`
-	Suffix      string `json:"suffix"`
-	Birthdate   string `json:"birthdate"`
-	Sex         string `json:"sex"`
-	CivilStatus string `json:"civil_status"`
+	ID            int    `json:"id"`
+	CaseNo        string `json:"caseNo"`
+	HospitalNo    string `json:"hospitalNo"`
+	Lastname      string `json:"lastname"`
+	Firstname     string `json:"firstname"`
+	Middlename    string `json:"middlename"`
+	Suffix        string `json:"suffix"`
+	Birthdate     string `json:"birthdate"`
+	Age           string `json:"age"`
+	Room          string `json:"room"`
+	AdmissionDate string `json:"admissionDate"`
+	DischargeDate string `json:"dischargeDate"`
+	Sex           string `json:"sex"`
+	Height        string `json:"height"`
+	Weight        string `json:"weight"`
+	Complaint     string `json:"complaint"`
 }
 
 var DB *sql.DB
@@ -25,15 +33,23 @@ func InitDB(db *sql.DB) {
 func CreateTable() error {
 	query := `
 		CREATE TABLE IF NOT EXISTS items (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			lastname TEXT NOT NULL,
-			firstname TEXT NOT NULL,
-			middlename TEXT,
-			suffix TEXT,
-			birthdate TEXT,
-			sex TEXT,
-			civil_status TEXT,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			case_no VARCHAR(50),
+			hospital_no VARCHAR(50),
+			lastname VARCHAR(100) NOT NULL,
+			firstname VARCHAR(100) NOT NULL,
+			middlename VARCHAR(100),
+			suffix VARCHAR(20),
+			birthdate DATE,
+			age VARCHAR(10),
+			room VARCHAR(50),
+			admission_date DATETIME,
+			discharge_date DATETIME,
+			sex VARCHAR(20),
+			height VARCHAR(20),
+			weight VARCHAR(20),
+			complaint TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)
 	`
 	_, err := DB.Exec(query)
@@ -42,7 +58,7 @@ func CreateTable() error {
 
 // GetAllItems retrieves all items from the database
 func GetAllItems() ([]Item, error) {
-	rows, err := DB.Query("SELECT id, lastname, firstname, middlename, suffix, birthdate, sex, civil_status FROM items ORDER BY id DESC")
+	rows, err := DB.Query("SELECT id, case_no, hospital_no, lastname, firstname, middlename, suffix, birthdate, age, room, admission_date, discharge_date, sex, height, weight, complaint FROM items ORDER BY id DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +67,7 @@ func GetAllItems() ([]Item, error) {
 	items := []Item{}
 	for rows.Next() {
 		var item Item
-		err := rows.Scan(&item.ID, &item.Lastname, &item.Firstname, &item.Middlename, &item.Suffix, &item.Birthdate, &item.Sex, &item.CivilStatus)
+		err := rows.Scan(&item.ID, &item.CaseNo, &item.HospitalNo, &item.Lastname, &item.Firstname, &item.Middlename, &item.Suffix, &item.Birthdate, &item.Age, &item.Room, &item.AdmissionDate, &item.DischargeDate, &item.Sex, &item.Height, &item.Weight, &item.Complaint)
 		if err != nil {
 			return nil, err
 		}
@@ -60,11 +76,22 @@ func GetAllItems() ([]Item, error) {
 	return items, nil
 }
 
+// GetItemByID retrieves a single item by ID
+func GetItemByID(id int) (*Item, error) {
+	var item Item
+	err := DB.QueryRow("SELECT id, case_no, hospital_no, lastname, firstname, middlename, suffix, birthdate, age, room, admission_date, discharge_date, sex, height, weight, complaint FROM items WHERE id = ?", id).
+		Scan(&item.ID, &item.CaseNo, &item.HospitalNo, &item.Lastname, &item.Firstname, &item.Middlename, &item.Suffix, &item.Birthdate, &item.Age, &item.Room, &item.AdmissionDate, &item.DischargeDate, &item.Sex, &item.Height, &item.Weight, &item.Complaint)
+	if err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
 // CreateItem inserts a new item into the database
 func CreateItem(item *Item) error {
 	result, err := DB.Exec(
-		"INSERT INTO items (lastname, firstname, middlename, suffix, birthdate, sex, civil_status) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		item.Lastname, item.Firstname, item.Middlename, item.Suffix, item.Birthdate, item.Sex, item.CivilStatus,
+		"INSERT INTO items (case_no, hospital_no, lastname, firstname, middlename, suffix, birthdate, age, room, admission_date, discharge_date, sex, height, weight, complaint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		item.CaseNo, item.HospitalNo, item.Lastname, item.Firstname, item.Middlename, item.Suffix, item.Birthdate, item.Age, item.Room, item.AdmissionDate, item.DischargeDate, item.Sex, item.Height, item.Weight, item.Complaint,
 	)
 	if err != nil {
 		return err
@@ -82,8 +109,8 @@ func CreateItem(item *Item) error {
 // UpdateItem updates an existing item in the database
 func UpdateItem(id int, item *Item) (int64, error) {
 	result, err := DB.Exec(
-		"UPDATE items SET lastname = ?, firstname = ?, middlename = ?, suffix = ?, birthdate = ?, sex = ?, civil_status = ? WHERE id = ?",
-		item.Lastname, item.Firstname, item.Middlename, item.Suffix, item.Birthdate, item.Sex, item.CivilStatus, id,
+		"UPDATE items SET case_no = ?, hospital_no = ?, lastname = ?, firstname = ?, middlename = ?, suffix = ?, birthdate = ?, age = ?, room = ?, admission_date = ?, discharge_date = ?, sex = ?, height = ?, weight = ?, complaint = ? WHERE id = ?",
+		item.CaseNo, item.HospitalNo, item.Lastname, item.Firstname, item.Middlename, item.Suffix, item.Birthdate, item.Age, item.Room, item.AdmissionDate, item.DischargeDate, item.Sex, item.Height, item.Weight, item.Complaint, id,
 	)
 	if err != nil {
 		return 0, err

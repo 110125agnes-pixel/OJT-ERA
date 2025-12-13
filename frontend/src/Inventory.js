@@ -41,52 +41,7 @@ function Inventory() {
     }
   };
 
-  const categoryOptions = [
-    '', 
-    'Motherboard', 
-    'Processor (CPU)', 
-    'RAM (Memory)', 
-    'Graphics Card (GPU)',
-    'Storage (HDD/SSD)',
-    'Power Supply (PSU)',
-    'Computer Case',
-    'Cooling System',
-    'Monitor',
-    'Keyboard',
-    'Mouse',
-    'Headset',
-    'Webcam',
-    'Speakers',
-    'Cables & Accessories',
-    'Networking',
-    'Other'
-  ];
-  const brandOptions = [
-    '',
-    'Intel',
-    'AMD',
-    'ASUS',
-    'MSI',
-    'Gigabyte',
-    'NVIDIA',
-    'Corsair',
-    'Kingston',
-    'Samsung',
-    'Western Digital',
-    'Seagate',
-    'Logitech',
-    'Razer',
-    'HyperX',
-    'Cooler Master',
-    'NZXT',
-    'Thermaltake',
-    'Acer',
-    'Dell',
-    'LG',
-    'ViewSonic',
-    'Other'
-  ];
-  const unitOptions = ['', 'pcs', 'unit', 'set', 'box'];
+  const unitOptions = ['', 'pcs', 'unit', 'set', 'box', 'kg', 'lbs', 'pack'];
 
   const addItem = async (e) => {
     e.preventDefault();
@@ -178,7 +133,7 @@ function Inventory() {
         brand: data.brand,
         quantity: data.quantity,
         unit: data.unit,
-        price: response.data.price
+        price: data.price
       };
       
       setItems(items.map(item => item.id === id ? updatedItem : item));
@@ -201,7 +156,7 @@ function Inventory() {
       <p className="subtitle">Track and manage inventory items</p>
       
       <form onSubmit={addItem} className="add-form">
-        <h3>Add New Computer Hardware Item</h3>
+        <h3>Add New Inventory Item</h3>
         <div className="form-grid">
           <input
             type="text"
@@ -210,27 +165,18 @@ function Inventory() {
             onChange={(e) => setNewItem({...newItem, itemName: e.target.value})}
             required
           />
-          <select
+          <input
+            type="text"
+            placeholder="Category"
             value={newItem.category}
             onChange={(e) => setNewItem({...newItem, category: e.target.value})}
-            required
-          >
-            {categoryOptions.map((option, idx) => (
-              <option key={idx} value={option}>
-                {option || 'Select Category *'}
-              </option>
-            ))}
-          </select>
-          <select
+          />
+          <input
+            type="text"
+            placeholder="Brand"
             value={newItem.brand}
             onChange={(e) => setNewItem({...newItem, brand: e.target.value})}
-          >
-            {brandOptions.map((option, idx) => (
-              <option key={idx} value={option}>
-                {option || 'Select Brand'}
-              </option>
-            ))}
-          </select>
+          />
           <input
             type="number"
             placeholder="Quantity *"
@@ -307,20 +253,20 @@ function Inventory() {
                           />
                         </td>
                         <td>
-                          <select
+                          <input
+                            type="text"
                             value={editingItem.category}
                             onChange={(e) => setEditingItem({...editingItem, category: e.target.value})}
-                          >
-                            {categoryOptions.map((opt, idx) => <option key={idx} value={opt}>{opt || 'Category'}</option>)}
-                          </select>
+                            placeholder="Category"
+                          />
                         </td>
                         <td>
-                          <select
+                          <input
+                            type="text"
                             value={editingItem.brand}
                             onChange={(e) => setEditingItem({...editingItem, brand: e.target.value})}
-                          >
-                            {brandOptions.map((opt, idx) => <option key={idx} value={opt}>{opt || 'Brand'}</option>)}
-                          </select>
+                            placeholder="Brand"
+                          />
                         </td>
                         <td>
                           <input

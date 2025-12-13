@@ -1,45 +1,53 @@
 .dashboard {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   min-height: 100vh;
   background: #f5f7fa;
 }
 
 .dashboard-nav {
   background: white;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  padding: 0 30px;
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+  padding: 30px 20px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 70px;
+  flex-direction: column;
+  width: 250px;
+  min-height: 100vh;
   position: sticky;
   top: 0;
+  left: 0;
   z-index: 100;
 }
 
 .nav-brand h1 {
-  font-size: 22px;
+  font-size: 20px;
   color: #667eea;
-  margin: 0;
+  margin: 0 0 40px 0;
   font-weight: 700;
+  text-align: center;
+  padding-bottom: 20px;
+  border-bottom: 2px solid #f0f0f0;
 }
 
 .nav-menu {
   display: flex;
+  flex-direction: column;
   gap: 10px;
+  flex: 1;
 }
 
 .nav-item {
   background: transparent;
   border: none;
-  padding: 10px 20px;
+  padding: 14px 20px;
   font-size: 15px;
   color: #666;
   cursor: pointer;
   border-radius: 8px;
   transition: all 0.3s ease;
   font-weight: 500;
+  text-align: left;
+  width: 100%;
 }
 
 .nav-item:hover {
@@ -50,18 +58,21 @@
 .nav-item.active {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
 
 .logout-btn {
   background: #ff4757;
   color: white;
   border: none;
-  padding: 10px 24px;
+  padding: 12px 20px;
   border-radius: 8px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
+  width: 100%;
+  margin-top: auto;
 }
 
 .logout-btn:hover {
@@ -73,9 +84,7 @@
 .dashboard-content {
   flex: 1;
   padding: 30px;
-  max-width: 1400px;
-  width: 100%;
-  margin: 0 auto;
+  overflow-y: auto;
 }
 
 .dashboard-home {
@@ -101,10 +110,11 @@
 }
 
 .dashboard-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  display: flex;
   gap: 24px;
   margin-top: 20px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .dashboard-card {
@@ -115,6 +125,8 @@
   cursor: pointer;
   transition: all 0.3s ease;
   border: 2px solid transparent;
+  width: 320px;
+  flex-shrink: 0;
 }
 
 .dashboard-card:hover {

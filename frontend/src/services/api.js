@@ -10,6 +10,12 @@ export const itemService = {
     return response.data;
   },
 
+  // Get a single item by ID
+  getItem: async (id) => {
+    const response = await axios.get(`${API_BASE_URL}/items/${id}`);
+    return response.data;
+  },
+
   // Create a new item
   createItem: async (item) => {
     const response = await axios.post(`${API_BASE_URL}/items`, item);

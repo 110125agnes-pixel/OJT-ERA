@@ -10,7 +10,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
-	_ "modernc.org/sqlite"
+	_ "github.com/go-sql-driver/mysql"
 	"backend/models"
 	"backend/routes"
 )
@@ -30,9 +30,10 @@ var db *sql.DB
 func main() {
 	// Database connection
 	var err error
-	dbPath := getEnv("DB_PATH", "./app.db")
+	// MySQL connection string format: username:password@tcp(host:port)/database
+	dsn := getEnv("DB_DSN", "root:admin@tcp(localhost:3306)/ojt_era_db?parseTime=true")
 
-	db, err = sql.Open("sqlite", dbPath)
+	db, err = sql.Open("mysql", dsn)
 	if err != nil {
 		log.Fatal("Error opening database: ", err)
 	}
@@ -43,7 +44,7 @@ func main() {
 	if err != nil {
 		log.Fatal("Error connecting to database: ", err)
 	}
-	log.Println("Successfully connected to SQLite database!")
+	log.Println("Successfully connected to MySQL database!")
 
 	// Initialize models with database connection
 	models.InitDB(db)
@@ -81,17 +82,17 @@ func main() {
 }
 
 func createInventoryTable() {
-	// Create inventory table
+	// Create inventory table (MySQL syntax)
 	query := `
 		CREATE TABLE IF NOT EXISTS inventory (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			item_name TEXT NOT NULL,
-			category TEXT NOT NULL,
-			brand TEXT NOT NULL,
-			quantity INTEGER NOT NULL DEFAULT 0,
-			unit TEXT NOT NULL,
-			price REAL NOT NULL DEFAULT 0,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			item_name VARCHAR(255) NOT NULL,
+			category VARCHAR(100) NOT NULL,
+			brand VARCHAR(100) NOT NULL,
+			quantity INT NOT NULL DEFAULT 0,
+			unit VARCHAR(50) NOT NULL,
+			price DECIMAL(10,2) NOT NULL DEFAULT 0,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)
 	`
 	_, err := db.Exec(query)

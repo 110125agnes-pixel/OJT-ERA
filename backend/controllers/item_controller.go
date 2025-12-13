@@ -28,6 +28,26 @@ func GetItems(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(items)
 }
 
+// GetItem handles GET requests to retrieve a single item by ID
+func GetItem(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	item, err := models.GetItemByID(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(item)
+}
+
 // CreateItem handles POST requests to create a new item
 func CreateItem(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -39,8 +59,8 @@ func CreateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if item.Lastname == "" || item.Firstname == "" {
-		http.Error(w, "Lastname and Firstname are required", http.StatusBadRequest)
+	if item.Lastname == "" || item.Firstname == "" || item.CaseNo == "" {
+		http.Error(w, "Case No, Lastname and Firstname are required", http.StatusBadRequest)
 		return
 	}
 
@@ -72,8 +92,8 @@ func UpdateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if item.Lastname == "" || item.Firstname == "" {
-		http.Error(w, "Lastname and Firstname are required", http.StatusBadRequest)
+	if item.Lastname == "" || item.Firstname == "" || item.CaseNo == "" {
+		http.Error(w, "Case No, Lastname and Firstname are required", http.StatusBadRequest)
 		return
 	}
 

@@ -1,7 +1,9 @@
 ﻿import React, { useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
 import Login from './Login';
 import Dashboard from './Dashboard';
+import PatientView from './PatientView';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -18,7 +20,15 @@ function App() {
     return <Login onLogin={handleLogin} />;
   }
 
-  return <Dashboard onLogout={handleLogout} />;
+  return (
+    <Router>
+      <Routes>
+        <Route path="/dashboard" element={<Dashboard onLogout={handleLogout} />} />
+        <Route path="/patient/:id" element={<PatientView />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </Router>
+  );
 }
 
 export default App;

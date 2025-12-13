@@ -14,6 +14,7 @@ func SetupRoutes() *mux.Router {
 
 	// Item routes
 	router.HandleFunc("/api/items", controllers.GetItems).Methods("GET")
+	router.HandleFunc("/api/items/{id}", controllers.GetItem).Methods("GET")
 	router.HandleFunc("/api/items", controllers.CreateItem).Methods("POST")
 	router.HandleFunc("/api/items/{id}", controllers.UpdateItem).Methods("PUT")
 	router.HandleFunc("/api/items/{id}", controllers.DeleteItem).Methods("DELETE")
