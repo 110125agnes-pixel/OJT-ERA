@@ -11,18 +11,9 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 	_ "modernc.org/sqlite"
+	"backend/models"
+	"backend/routes"
 )
-
-type Item struct {
-	ID          int    `json:"id"`
-	Lastname    string `json:"lastname"`
-	Firstname   string `json:"firstname"`
-	Middlename  string `json:"middlename"`
-	Suffix      string `json:"suffix"`
-	Birthdate   string `json:"birthdate"`
-	Sex         string `json:"sex"`
-	CivilStatus string `json:"civil_status"`
-}
 
 type InventoryItem struct {
 	ID       int     `json:"id"`
@@ -54,25 +45,26 @@ func main() {
 	}
 	log.Println("Successfully connected to SQLite database!")
 
-	// Create table if not exists
-	createTable()
+	// Initialize models with database connection
+	models.InitDB(db)
 
-	// Setup router
-	router := mux.NewRouter()
+	// Create tables if not exist
+	err = models.CreateTable()
+	if err != nil {
+		log.Fatal("Error creating employee table: ", err)
+	}
+	log.Println("Table 'items' ready")
 
-	// API routes
-	router.HandleFunc("/api/items", getItems).Methods("GET")
-	router.HandleFunc("/api/items", createItem).Methods("POST")
-	router.HandleFunc("/api/items/{id}", updateItem).Methods("PUT")
-	router.HandleFunc("/api/items/{id}", deleteItem).Methods("DELETE")
-	
-	// Inventory routes
+	createInventoryTable()
+
+	// Setup router with all routes
+	router := routes.SetupRoutes()
+
+	// Inventory routes (keeping existing inventory functionality)
 	router.HandleFunc("/api/inventory", getInventory).Methods("GET")
 	router.HandleFunc("/api/inventory", createInventoryItem).Methods("POST")
 	router.HandleFunc("/api/inventory/{id}", updateInventoryItem).Methods("PUT")
 	router.HandleFunc("/api/inventory/{id}", deleteInventoryItem).Methods("DELETE")
-	
-	router.HandleFunc("/api/health", healthCheck).Methods("GET")
 
 	// CORS middleware
 	handler := cors.New(cors.Options{
@@ -88,29 +80,9 @@ func main() {
 	log.Fatal(http.ListenAndServe(":"+port, handler))
 }
 
-func createTable() {
-	// Create employee table
-	query1 := `
-		CREATE TABLE IF NOT EXISTS items (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			lastname TEXT NOT NULL,
-			firstname TEXT NOT NULL,
-			middlename TEXT,
-			suffix TEXT,
-			birthdate TEXT,
-			sex TEXT,
-			civil_status TEXT,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)
-	`
-	_, err := db.Exec(query1)
-	if err != nil {
-		log.Fatal("Error creating items table: ", err)
-	}
-	log.Println("Table 'items' ready")
-
+func createInventoryTable() {
 	// Create inventory table
-	query2 := `
+	query := `
 		CREATE TABLE IF NOT EXISTS inventory (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			item_name TEXT NOT NULL,
@@ -122,150 +94,11 @@ func createTable() {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)
 	`
-	_, err = db.Exec(query2)
+	_, err := db.Exec(query)
 	if err != nil {
 		log.Fatal("Error creating inventory table: ", err)
 	}
 	log.Println("Table 'inventory' ready")
-}
-
-func healthCheck(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
-}
-
-func getItems(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	rows, err := db.Query("SELECT id, lastname, firstname, middlename, suffix, birthdate, sex, civil_status FROM items ORDER BY id DESC")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
-
-	items := []Item{}
-	for rows.Next() {
-		var item Item
-		err := rows.Scan(&item.ID, &item.Lastname, &item.Firstname, &item.Middlename, &item.Suffix, &item.Birthdate, &item.Sex, &item.CivilStatus)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		items = append(items, item)
-	}
-
-	json.NewEncoder(w).Encode(items)
-}
-
-func createItem(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	var item Item
-	err := json.NewDecoder(r.Body).Decode(&item)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if item.Lastname == "" || item.Firstname == "" {
-		http.Error(w, "Lastname and Firstname are required", http.StatusBadRequest)
-		return
-	}
-
-	result, err := db.Exec(
-		"INSERT INTO items (lastname, firstname, middlename, suffix, birthdate, sex, civil_status) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		item.Lastname, item.Firstname, item.Middlename, item.Suffix, item.Birthdate, item.Sex, item.CivilStatus,
-	)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	id, err := result.LastInsertId()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	item.ID = int(id)
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(item)
-}
-
-func updateItem(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	params := mux.Vars(r)
-	id, err := strconv.Atoi(params["id"])
-	if err != nil {
-		http.Error(w, "Invalid ID", http.StatusBadRequest)
-		return
-	}
-
-	var item Item
-	err = json.NewDecoder(r.Body).Decode(&item)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if item.Lastname == "" || item.Firstname == "" {
-		http.Error(w, "Lastname and Firstname are required", http.StatusBadRequest)
-		return
-	}
-
-	result, err := db.Exec(
-		"UPDATE items SET lastname = ?, firstname = ?, middlename = ?, suffix = ?, birthdate = ?, sex = ?, civil_status = ? WHERE id = ?",
-		item.Lastname, item.Firstname, item.Middlename, item.Suffix, item.Birthdate, item.Sex, item.CivilStatus, id,
-	)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	if rowsAffected == 0 {
-		http.Error(w, "Item not found", http.StatusNotFound)
-		return
-	}
-
-	item.ID = id
-	json.NewEncoder(w).Encode(item)
-}
-
-func deleteItem(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	params := mux.Vars(r)
-	id, err := strconv.Atoi(params["id"])
-	if err != nil {
-		http.Error(w, "Invalid ID", http.StatusBadRequest)
-		return
-	}
-
-	result, err := db.Exec("DELETE FROM items WHERE id = ?", id)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	if rowsAffected == 0 {
-		http.Error(w, "Item not found", http.StatusNotFound)
-		return
-	}
-
-	json.NewEncoder(w).Encode(map[string]string{"message": "Item deleted successfully"})
 }
 
 func getEnv(key, defaultValue string) string {

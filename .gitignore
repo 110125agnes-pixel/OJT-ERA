@@ -18,6 +18,7 @@
 /backend/.env
 
 # Database
+*.db
 *.sql.backup
 /database/*.backup
 

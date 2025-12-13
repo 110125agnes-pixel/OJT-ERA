@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import './EmployeeProfiling.css';
-import axios from 'axios';
+import { itemService } from './services/api';
+import ItemForm from './components/ItemForm';
+import ItemEditForm from './components/ItemEditForm';
 
 function EmployeeProfiling() {
   const [employees, setEmployees] = useState([]);
@@ -29,8 +31,8 @@ function EmployeeProfiling() {
   const fetchEmployees = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('/api/items');
-      setEmployees(response.data || []);
+      const data = await itemService.getAllItems();
+      setEmployees(data || []);
       setError('');
     } catch (err) {
       setError('Failed to fetch employees: ' + (err.response?.data?.error || err.message));
@@ -48,8 +50,8 @@ function EmployeeProfiling() {
     }
     try {
       setLoading(true);
-      const response = await axios.post('/api/items', newEmployee);
-      setEmployees([...employees, response.data]);
+      const data = await itemService.createItem(newEmployee);
+      setEmployees([...employees, data]);
       setNewEmployee({
         lastname: '',
         firstname: '',
@@ -74,7 +76,7 @@ function EmployeeProfiling() {
 
     try {
       setLoading(true);
-      await axios.delete(`/api/items/${id}`);
+      await itemService.deleteItem(id);
       setEmployees(employees.filter(emp => emp.id !== id));
       setError('');
     } catch (err) {
@@ -102,8 +104,8 @@ function EmployeeProfiling() {
     }
     try {
       setLoading(true);
-      const response = await axios.put(`/api/items/${id}`, editingEmployee);
-      setEmployees(employees.map(emp => emp.id === id ? response.data : emp));
+      const data = await itemService.updateItem(id, editingEmployee);
+      setEmployees(employees.map(emp => emp.id === id ? data : emp));
       setEditingId(null);
       setEditingEmployee(null);
       setError('');

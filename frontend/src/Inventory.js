@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { inventoryService } from './services/api';
 import './Inventory.css';
 
 function Inventory() {
@@ -23,9 +23,9 @@ function Inventory() {
 
   const fetchItems = async () => {
     try {
-      const response = await axios.get('http://localhost:8080/api/inventory');
+      const data = await inventoryService.getAllInventory();
       // Map backend field names to frontend format
-      const mappedItems = response.data.map(item => ({
+      const mappedItems = data.map(item => ({
         id: item.id,
         itemName: item.item_name,
         category: item.category,
@@ -97,7 +97,7 @@ function Inventory() {
     
     try {
       // Send to backend with correct field names
-      const response = await axios.post('http://localhost:8080/api/inventory', {
+      const data = await inventoryService.createInventoryItem({
         item_name: newItem.itemName,
         category: newItem.category,
         brand: newItem.brand,
@@ -108,13 +108,13 @@ function Inventory() {
       
       // Map response back to frontend format
       const addedItem = {
-        id: response.data.id,
-        itemName: response.data.item_name,
-        category: response.data.category,
-        brand: response.data.brand,
-        quantity: response.data.quantity,
-        unit: response.data.unit,
-        price: response.data.price
+        id: data.id,
+        itemName: data.item_name,
+        category: data.category,
+        brand: data.brand,
+        quantity: data.quantity,
+        unit: data.unit,
+        price: data.price
       };
       
       setItems([addedItem, ...items]);
@@ -135,7 +135,7 @@ function Inventory() {
   const deleteItem = async (id) => {
     if (window.confirm('Are you sure you want to delete this item?')) {
       try {
-        await axios.delete(`http://localhost:8080/api/inventory/${id}`);
+        await inventoryService.deleteInventoryItem(id);
         setItems(items.filter(item => item.id !== id));
       } catch (error) {
         console.error('Error deleting item:', error);
@@ -161,7 +161,7 @@ function Inventory() {
     }
     
     try {
-      const response = await axios.put(`http://localhost:8080/api/inventory/${id}`, {
+      const data = await inventoryService.updateInventoryItem(id, {
         item_name: editingItem.itemName,
         category: editingItem.category,
         brand: editingItem.brand,
@@ -172,12 +172,12 @@ function Inventory() {
       
       // Map response back to frontend format
       const updatedItem = {
-        id: response.data.id,
-        itemName: response.data.item_name,
-        category: response.data.category,
-        brand: response.data.brand,
-        quantity: response.data.quantity,
-        unit: response.data.unit,
+        id: data.id,
+        itemName: data.item_name,
+        category: data.category,
+        brand: data.brand,
+        quantity: data.quantity,
+        unit: data.unit,
         price: response.data.price
       };
       
