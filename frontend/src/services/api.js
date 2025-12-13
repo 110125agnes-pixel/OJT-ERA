@@ -29,6 +29,54 @@ export const itemService = {
   }
 };
 
+// Disease API service
+export const diseaseService = {
+  // Get all diseases
+  getAllDiseases: async () => {
+    const response = await axios.get(`${API_BASE_URL}/diseases`);
+    return response.data;
+  },
+
+  // Create a new disease
+  createDisease: async (disease) => {
+    const response = await axios.post(`${API_BASE_URL}/diseases`, disease);
+    return response.data;
+  },
+
+  // Update a disease
+  updateDisease: async (id, disease) => {
+    const response = await axios.put(`${API_BASE_URL}/diseases/${id}`, disease);
+    return response.data;
+  },
+
+  // Delete a disease
+  deleteDisease: async (id) => {
+    const response = await axios.delete(`${API_BASE_URL}/diseases/${id}`);
+    return response.data;
+  },
+
+  // Get diseases for an employee
+  getEmployeeDiseases: async (employeeID) => {
+    const response = await axios.get(`${API_BASE_URL}/employees/${employeeID}/diseases`);
+    return response.data;
+  },
+
+  // Add disease to employee
+  addDiseaseToEmployee: async (employeeID, diseaseID, dateDiagnosed = '') => {
+    const response = await axios.post(`${API_BASE_URL}/employees/${employeeID}/diseases`, {
+      disease_id: diseaseID,
+      date_diagnosed: dateDiagnosed
+    });
+    return response.data;
+  },
+
+  // Remove disease from employee
+  removeDiseaseFromEmployee: async (employeeID, diseaseID) => {
+    const response = await axios.delete(`${API_BASE_URL}/employees/${employeeID}/diseases/${diseaseID}`);
+    return response.data;
+  }
+};
+
 // Inventory API service
 export const inventoryService = {
   // Get all inventory items

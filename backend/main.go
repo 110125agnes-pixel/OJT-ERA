@@ -55,6 +55,12 @@ func main() {
 	}
 	log.Println("Table 'items' ready")
 
+	err = models.CreateDiseaseTable()
+	if err != nil {
+		log.Fatal("Error creating disease table: ", err)
+	}
+	log.Println("Table 'diseases' ready")
+
 	createInventoryTable()
 
 	// Setup router with all routes
