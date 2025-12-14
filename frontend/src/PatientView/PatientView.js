@@ -6,6 +6,10 @@ import "./PatientView.css";
 // --- IMPORTS FOR TABS ---
 import MedicalHistory from "./tabs/MedicalHistory";
 import PhysicalExamination from "./tabs/PhysicalExamination";
+import FamilyHistory from "./tabs/FamilyHistory";
+import Surgical from "./tabs/SurgicalHistory";
+import Immunization from "./tabs/Immunization";
+import FemaleHistory from "./tabs/FemaleHistory";
 
 function PatientView() {
   const { id } = useParams();
@@ -215,8 +219,17 @@ function PatientView() {
               <PhysicalExamination />
             )}
 
-            {/* Placeholder for others */}
-            {activeSubTab === "Surgery" && <div>Surgery Content Here</div>}
+            {/* Renders FamilyHistory.js */}
+            {activeSubTab === "Family" && <FamilyHistory />}
+
+            {/* Renders Surgical.js */}
+            {activeSubTab === "Surgery" && <Surgical />}
+
+            {/* Renders Immunization.js */}
+            {activeSubTab === "Immunization" && <Immunization />}
+
+            {/* Renders FemaleHistory.js */}
+            {activeSubTab === "Female" && <FemaleHistory />}
           </>
         )}
 

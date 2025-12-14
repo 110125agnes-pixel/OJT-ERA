@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import "./MedicalHistory.css";
 
 function MedicalHistory() {
   const [history, setHistory] = useState({

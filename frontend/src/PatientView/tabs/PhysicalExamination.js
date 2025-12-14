@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import "../PatientView.css";
+import "./PhysicalExamination.css";
 
 function PhysicalExamination() {
   // State for General Survey

@@ -32,7 +32,7 @@ func main() {
 	// Database connection
 	var err error
 	// MySQL connection string format: username:password@tcp(host:port)/database
-	dsn := getEnv("DB_DSN", "root:1234@tcp(localhost:3306)/ojt_era_db?parseTime=true")
+	dsn := getEnv("DB_DSN", "root:admin@tcp(localhost:3306)/ojt_era_db?parseTime=true")
 
 	db, err = sql.Open("mysql", dsn)
 	if err != nil {

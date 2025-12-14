@@ -157,6 +157,7 @@ function EmployeeProfiling() {
               required
             />
           </div>
+          
           <div className="form-field">
             <label>Middle Name</label>
             <input
@@ -190,6 +191,7 @@ function EmployeeProfiling() {
               onChange={(e) => setNewEmployee({...newEmployee, age: e.target.value})}
             />
           </div>
+          
           <div className="form-field">
             <label>Room</label>
             <input
@@ -225,6 +227,7 @@ function EmployeeProfiling() {
               <option value="Female">Female</option>
             </select>
           </div>
+          
           <div className="form-field">
             <label>Height (cm)</label>
             <input
