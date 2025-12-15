@@ -296,6 +296,7 @@ function EmployeeProfiling() {
                   <td>{emp.admissionDate ? new Date(emp.admissionDate).toLocaleString() : ''}</td>
                   <td>
                     <button onClick={() => viewPatient(emp)} className="view-btn">View</button>
+                    <button onClick={() => deleteEmployee(emp.id)} className="delete-btn">Delete</button>
                   </td>
                 </tr>
               ))}

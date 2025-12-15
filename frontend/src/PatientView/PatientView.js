@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { itemService } from "../services/api";
 import "./PatientView.css";
@@ -10,6 +10,9 @@ import FamilyHistory from "./tabs/FamilyHistory";
 import Surgical from "./tabs/SurgicalHistory";
 import Immunization from "./tabs/Immunization";
 import FemaleHistory from "./tabs/FemaleHistory";
+import SocialHistory from "./tabs/SocialHistory";
+import PertinentPhysicalExamination from "./tabs/PertinentPhysicalExamination";
+
 
 function PatientView() {
   const { id } = useParams();
@@ -24,11 +27,7 @@ function PatientView() {
   // Note: I removed the massive 'medicalHistory' state from here
   // because it now lives inside the MedicalHistory.js component.
 
-  useEffect(() => {
-    fetchPatient();
-  }, [id]);
-
-  const fetchPatient = async () => {
+  const fetchPatient = useCallback(async () => {
     try {
       setLoading(true);
       const data = await itemService.getItem(id);
@@ -41,7 +40,11 @@ function PatientView() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    fetchPatient();
+  }, [fetchPatient]);
 
   const calculateAge = (birthdate) => {
     if (!birthdate) return "";
@@ -214,6 +217,9 @@ function PatientView() {
             {/* Renders MedicalHistory.js */}
             {activeSubTab === "Medical" && <MedicalHistory />}
 
+            {/* Renders PertinentPhysicalExamination.js */}
+            {activeSubTab === "*Pertinent Physical Examinations" && <PertinentPhysicalExamination />}
+
             {/* Renders PhysicalExamination.js */}
             {activeSubTab === "*Physical Examination" && (
               <PhysicalExamination />
@@ -230,6 +236,9 @@ function PatientView() {
 
             {/* Renders FemaleHistory.js */}
             {activeSubTab === "Female" && <FemaleHistory />}
+
+            {/* Renders SocialHistory.js */}
+            {activeSubTab === "Social History" && <SocialHistory />}
           </>
         )}
 

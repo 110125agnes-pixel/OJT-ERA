@@ -167,10 +167,7 @@ const SurgicalHistory = () => {
         </div>
       </div>
 
-      {/* DateTime Footer */}
-      <div className="surgical-footer">
-        <span>{formatDateTime(currentDateTime)}</span>
-      </div>
+      {/* DateTime Footer removed */}
     </div>
   );
 };

@@ -27,7 +27,6 @@ const FamilyHistory = () => {
 
   const [notes, setNotes] = useState('');
   const [tableData, setTableData] = useState([]);
-  const [currentDate] = useState(new Date());
 
   const diseaseMapping = {
     none: { code: '000', name: 'None' },
@@ -104,18 +103,6 @@ const FamilyHistory = () => {
     setTableData([]);
   };
 
-  const formatDateTime = (date) => {
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const year = date.getFullYear();
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    const ampm = date.getHours() >= 12 ? 'PM' : 'AM';
-    const displayHours = date.getHours() % 12 || 12;
-
-    return `${month}/${day}/${year}     ${String(displayHours).padStart(2, '0')}:${minutes} ${ampm}`;
-  };
-
   return (
     <div className="family-history-container">
       <div className="family-history-content">
@@ -180,10 +167,6 @@ const FamilyHistory = () => {
                 ))}
               </tbody>
             </table>
-          </div>
-
-          <div className="date-display">
-            {formatDateTime(currentDate)}
           </div>
         </div>
       </div>
