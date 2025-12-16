@@ -29,6 +29,19 @@ const SurgicalHistory = () => {
   const [notes, setNotes] = useState('');
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
 
+  // Load saved selections on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('surgicalHistorySelections');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setSelectedSurgeries(parsed.selectedSurgeries || []);
+        setNoneChecked(parsed.noneChecked || false);
+        setNotes(parsed.notes || '');
+      }
+    } catch (e) {}
+  }, []);
+
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentDateTime(new Date());
@@ -41,18 +54,22 @@ const SurgicalHistory = () => {
       setNoneChecked(false);
     }
 
+    let next;
     if (selectedSurgeries.find(s => s.id === surgery.id)) {
-      setSelectedSurgeries(selectedSurgeries.filter(s => s.id !== surgery.id));
+      next = selectedSurgeries.filter(s => s.id !== surgery.id);
     } else {
-      setSelectedSurgeries([...selectedSurgeries, surgery]);
+      next = [...selectedSurgeries, surgery];
     }
+    setSelectedSurgeries(next);
+    saveSelections(next, noneChecked, notes);
   };
 
   const handleNoneChange = () => {
-    setNoneChecked(!noneChecked);
-    if (!noneChecked) {
-      setSelectedSurgeries([]);
-    }
+    const nextNone = !noneChecked;
+    setNoneChecked(nextNone);
+    const nextSelected = nextNone ? [] : selectedSurgeries;
+    setSelectedSurgeries(nextSelected);
+    saveSelections(nextSelected, nextNone, notes);
   };
 
   const handleAddNote = () => {
@@ -62,13 +79,36 @@ const SurgicalHistory = () => {
         code: 'S998',
         name: notes.trim()
       };
-      setSelectedSurgeries([...selectedSurgeries, noteEntry]);
+      const next = [...selectedSurgeries, noteEntry];
+      setSelectedSurgeries(next);
       setNotes('');
+      saveSelections(next, noneChecked, '');
     }
   };
 
   const handleSave = () => {
+    saveSelections(selectedSurgeries, noneChecked, notes);
     alert('Surgical history saved successfully!');
+  };
+
+  const handleClear = () => {
+    const next = [];
+    setSelectedSurgeries(next);
+    setNoneChecked(false);
+    setNotes('');
+    saveSelections(next, false, '');
+  };
+
+  const saveSelections = (selected, none, noteText) => {
+    try {
+      const payload = { selectedSurgeries: selected, noneChecked: none, notes: noteText };
+      localStorage.setItem('surgicalHistorySelections', JSON.stringify(payload));
+      // Dispatch a custom event so other components in the same window can react immediately
+      try {
+        const ev = new CustomEvent('surgicalHistoryUpdated', { detail: payload });
+        window.dispatchEvent(ev);
+      } catch (e) {}
+    } catch (e) {}
   };
 
   const formatDateTime = (date) => {
@@ -135,7 +175,7 @@ const SurgicalHistory = () => {
             <button className="btn-save-surgical" onClick={handleSave} title="Save">
               Save
             </button>
-            <button className="btn-clear-surgical" onClick={() => setSelectedSurgeries([])} title="Clear">
+            <button className="btn-clear-surgical" onClick={handleClear} title="Clear">
               Clear
             </button>
           </div>

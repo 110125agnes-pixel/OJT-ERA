@@ -233,3 +233,17 @@
 .checkbox-group input[type="checkbox"]:checked {
   accent-color: #4caf50;
 }
+
+/* Footer date/time spacing */
+.footer-info {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: 14px;
+  color: #333;
+  margin-top: 12px;
+}
+
+.footer-info span {
+  display: inline-block;
+}

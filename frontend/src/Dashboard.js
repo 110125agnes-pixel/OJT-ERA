@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import './Dashboard.css';
 import EmployeeProfiling from './EmployeeProfiling';
+import DiseaseSummary from './PatientView/tabs/DiseaseSummary';
 
 function Dashboard({ onLogout }) {
   const [activeModule, setActiveModule] = useState('home');
@@ -11,6 +12,8 @@ function Dashboard({ onLogout }) {
         return null;
       case 'profiling':
         return <EmployeeProfiling />;
+      case 'patientHistory':
+        return <DiseaseSummary />;
       case 'home':
       default:
         return (
@@ -48,6 +51,12 @@ function Dashboard({ onLogout }) {
             onClick={() => setActiveModule('profiling')}
           >
             👥 Patients
+          </button>
+          <button
+            className={activeModule === 'patientHistory' ? 'nav-item active' : 'nav-item'}
+            onClick={() => setActiveModule('patientHistory')}
+          >
+            🩺 Patient History
           </button>
         </div>
         <button className="logout-btn" onClick={onLogout}>

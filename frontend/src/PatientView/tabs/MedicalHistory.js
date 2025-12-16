@@ -1,7 +1,15 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import "./MedicalHistory.css";
 
 function MedicalHistory() {
+  const saved = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('medicalHistorySelections') || '{}');
+    } catch (e) {
+      return {};
+    }
+  })();
+
   const [history, setHistory] = useState({
     allergy: false,
     asthma: false,
@@ -24,8 +32,22 @@ function MedicalHistory() {
     others: false,
   });
 
+  // On mount, merge saved selections
+  useEffect(() => {
+    if (saved && Object.keys(saved).length) {
+      setHistory(prev => ({ ...prev, ...saved }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleChange = (field, value) => {
-    setHistory((prev) => ({ ...prev, [field]: value }));
+    setHistory((prev) => {
+      const next = { ...prev, [field]: value };
+      try {
+        localStorage.setItem('medicalHistorySelections', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
   };
 
   return (

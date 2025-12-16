@@ -12,6 +12,8 @@ import Immunization from "./tabs/Immunization";
 import FemaleHistory from "./tabs/FemaleHistory";
 import SocialHistory from "./tabs/SocialHistory";
 import PertinentPhysicalExamination from "./tabs/PertinentPhysicalExamination";
+import DiseaseSummary from "./tabs/DiseaseSummary";
+import SurgerySummary from "./tabs/SurgerySummary";
 
 
 function PatientView() {
@@ -24,8 +26,12 @@ function PatientView() {
   const [activeTab, setActiveTab] = useState("Profiling");
   const [activeSubTab, setActiveSubTab] = useState("Medical");
 
-  // Note: I removed the massive 'medicalHistory' state from here
-  // because it now lives inside the MedicalHistory.js component.
+  // Live clock (Philippine time)
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   const fetchPatient = useCallback(async () => {
     try {
@@ -187,13 +193,15 @@ function PatientView() {
 
         {activeTab === "Profiling" && (
           <div className="sub-tabs">
-            {[
+            {[ 
               "Medical",
               "Surgery",
+              "Surgery Summary",
               "Family",
               "Immunization",
               "Social History",
               "Female",
+              "Patient History",
               "*Pertinent Physical Examinations",
               "*Physical Examination",
               "NCDQANS",
@@ -228,6 +236,12 @@ function PatientView() {
             {/* Renders FamilyHistory.js */}
             {activeSubTab === "Family" && <FamilyHistory />}
 
+            {/* Renders DiseaseSummary.js (labelled Patient History) */}
+            {activeSubTab === "Patient History" && <DiseaseSummary />}
+
+            {/* Renders SurgerySummary.js */}
+            {activeSubTab === "Surgery Summary" && <SurgerySummary />}
+
             {/* Renders Surgical.js */}
             {activeSubTab === "Surgery" && <Surgical />}
 
@@ -256,8 +270,8 @@ function PatientView() {
       </div>
 
       <div className="footer-info">
-        <span>{new Date().toLocaleDateString("en-US")}</span>
-        <span>{new Date().toLocaleTimeString("en-US")}</span>
+        <span>{new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', month: '2-digit', day: '2-digit', year: 'numeric' }).format(now)}</span>
+        <span>{new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }).format(now)}</span>
       </div>
     </div>
   );
