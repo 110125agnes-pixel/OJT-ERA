@@ -43,6 +43,9 @@ cd backend
 
 # Install dependencies
 go mod download
+go get github.com/gorilla/mux
+go get github.com/go-sql-driver/mysql
+go get github.com/rs/cors
 
 # Create .env file (optional)
 copy .env.example .env
@@ -61,6 +64,7 @@ cd frontend
 
 # Install dependencies
 npm install
+npm install axios
 
 # Start the development server
 npm start
