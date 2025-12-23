@@ -1,0 +1,31 @@
+.disease-summary {
+  padding: 12px;
+}
+
+.disease-summary h3 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: #333;
+  background: #f0f0f0;
+  border: 1px solid #e0e0e0;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+.summary-list table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+
+.summary-list th,
+.summary-list td {
+  padding: 8px 10px;
+  border: 1px solid #e6e6e6;
+  font-size: 13px;
+  text-align: left;
+}
+
+.summary-list thead {
+  background: #fafafa;
+}

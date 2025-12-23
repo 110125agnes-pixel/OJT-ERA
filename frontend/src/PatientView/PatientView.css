@@ -18,6 +18,7 @@
   color: #c33;
 }
 
+/* --- Header Section --- */
 .patient-header {
   background: white;
   border: 2px solid #b8bcc8;
@@ -107,6 +108,7 @@
   border-color: #666;
 }
 
+/* --- Tabs --- */
 .tabs-container {
   background: white;
   border-left: 2px solid #b8bcc8;
@@ -169,6 +171,7 @@
   border-bottom: none;
 }
 
+/* --- Content Area --- */
 .content-area {
   background: white;
   border-left: 2px solid #b8bcc8;
@@ -178,6 +181,7 @@
   padding: 20px;
 }
 
+/* Medical History Styles */
 .medical-content {
   display: flex;
   flex-direction: column;
@@ -227,89 +231,19 @@
 }
 
 .checkbox-group input[type="checkbox"]:checked {
-  accent-color: #4CAF50;
+  accent-color: #4caf50;
 }
 
-.medical-details {
-  display: flex;
-  flex-direction: column;
-}
-
-.medical-details textarea {
-  width: 100%;
-  padding: 10px;
-  border: 2px solid #b8bcc8;
-  border-radius: 4px;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  font-size: 13px;
-  resize: vertical;
-}
-
-.medical-details textarea:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.medical-codes-table {
-  margin-top: 20px;
-  border: 2px solid #b8bcc8;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.medical-codes-table table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.medical-codes-table thead {
-  background: #e8e8e8;
-}
-
-.medical-codes-table th {
-  padding: 10px;
-  text-align: left;
-  font-weight: 600;
-  font-size: 13px;
-  color: #333;
-  border-bottom: 2px solid #b8bcc8;
-}
-
-.medical-codes-table th:first-child {
-  width: 100px;
-}
-
-.medical-codes-table td {
-  padding: 8px 10px;
-  font-size: 13px;
-  color: #333;
-  border-bottom: 1px solid #e0e0e0;
-}
-
-.medical-codes-table tbody tr:hover {
-  background: #f9f9f9;
-}
-
-.soap-content,
-.medicine-content {
-  padding: 20px;
-}
-
-.soap-content h3,
-.medicine-content h3 {
-  margin: 0 0 15px 0;
-  color: #333;
-  font-size: 16px;
-}
-
+/* Footer date/time spacing */
 .footer-info {
   display: flex;
-  justify-content: space-between;
-  padding: 10px 15px;
-  background: #e8e8e8;
-  border: 2px solid #b8bcc8;
-  border-top: none;
-  border-radius: 0 0 4px 4px;
-  font-size: 12px;
-  color: #666;
+  gap: 12px;
+  align-items: center;
+  font-size: 14px;
+  color: #333;
+  margin-top: 12px;
+}
+
+.footer-info span {
+  display: inline-block;
 }

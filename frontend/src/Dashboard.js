@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import './Dashboard.css';
-import Inventory from './Inventory';
 import EmployeeProfiling from './EmployeeProfiling';
+import DiseaseSummary from './PatientView/tabs/DiseaseSummary';
 
 function Dashboard({ onLogout }) {
   const [activeModule, setActiveModule] = useState('home');
@@ -9,20 +9,18 @@ function Dashboard({ onLogout }) {
   const renderContent = () => {
     switch (activeModule) {
       case 'inventory':
-        return <Inventory />;
+        return null;
       case 'profiling':
         return <EmployeeProfiling />;
+      case 'patientHistory':
+        return <DiseaseSummary />;
       case 'home':
       default:
         return (
           <div className="dashboard-home">
             <h2>Welcome to Patient Management Portal</h2>
             <div className="dashboard-cards">
-              <div className="dashboard-card" onClick={() => setActiveModule('inventory')}>
-                <div className="card-icon">📦</div>
-                <h3>Inventory Module</h3>
-                <p>Manage items, stock counts, and inventory operations</p>
-              </div>
+              {/* Inventory card removed */}
               <div className="dashboard-card" onClick={() => setActiveModule('profiling')}>
                 <div className="card-icon">👥</div>
                 <h3>Patient Management</h3>
@@ -47,17 +45,18 @@ function Dashboard({ onLogout }) {
           >
             🏠 Home
           </button>
-          <button 
-            className={activeModule === 'inventory' ? 'nav-item active' : 'nav-item'}
-            onClick={() => setActiveModule('inventory')}
-          >
-            📦 Inventory
-          </button>
+          {/* Inventory nav removed */}
           <button 
             className={activeModule === 'profiling' ? 'nav-item active' : 'nav-item'}
             onClick={() => setActiveModule('profiling')}
           >
             👥 Patients
+          </button>
+          <button
+            className={activeModule === 'patientHistory' ? 'nav-item active' : 'nav-item'}
+            onClick={() => setActiveModule('patientHistory')}
+          >
+            🩺 Patient History
           </button>
         </div>
         <button className="logout-btn" onClick={onLogout}>

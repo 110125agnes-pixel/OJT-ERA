@@ -28,9 +28,15 @@ function EmployeeProfiling() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [editItem, setEditItem] = useState(null);
+  const [editLoading, setEditLoading] = useState(false);
 
   const sexOptions = ['', 'Male', 'Female', 'Other'];
   const civilStatusOptions = ['', 'Single', 'Married', 'Divorced', 'Widowed'];
+
+  // Input sanitizers
+  const onlyDigits = (val) => (val || '').toString().replace(/\D+/g, '');
+  const onlyLetters = (val) => (val || '').toString().replace(/[^a-zA-Z\s]+/g, '');
 
   useEffect(() => {
     fetchEmployees();
@@ -103,6 +109,34 @@ function EmployeeProfiling() {
     }
   };
 
+  const openEdit = (emp) => {
+    setEditItem({...emp});
+  };
+
+  const handleEditChange = (updated) => {
+    setEditItem(updated);
+  };
+
+  const saveEdit = async () => {
+    if (!editItem) return;
+    try {
+      setEditLoading(true);
+      const updated = await itemService.updateItem(editItem.id, editItem);
+      setEmployees(employees.map(e => e.id === updated.id ? updated : e));
+      setEditItem(null);
+      setError('');
+    } catch (err) {
+      setError('Failed to update employee: ' + (err.response?.data?.error || err.message));
+      console.error('Error updating employee:', err);
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditItem(null);
+  };
+
   const viewPatient = (patient) => {
     navigate(`/patient/${patient.id}`);
   };
@@ -125,57 +159,65 @@ function EmployeeProfiling() {
           <div className="form-field">
             <label>Case No. *</label>
             <input
+              name="caseNo"
               type="text"
               value={newEmployee.caseNo}
-              onChange={(e) => setNewEmployee({...newEmployee, caseNo: e.target.value})}
+              onChange={(e) => setNewEmployee({...newEmployee, caseNo: onlyDigits(e.target.value)})}
               required
             />
           </div>
           <div className="form-field">
             <label>Hospital No.</label>
             <input
+              name="hospitalNo"
               type="text"
               value={newEmployee.hospitalNo}
-              onChange={(e) => setNewEmployee({...newEmployee, hospitalNo: e.target.value})}
+              onChange={(e) => setNewEmployee({...newEmployee, hospitalNo: onlyDigits(e.target.value)})}
             />
           </div>
           <div className="form-field">
             <label>Last Name *</label>
             <input
+              name="lastname"
               type="text"
               value={newEmployee.lastname}
-              onChange={(e) => setNewEmployee({...newEmployee, lastname: e.target.value})}
+              onChange={(e) => setNewEmployee({...newEmployee, lastname: onlyLetters(e.target.value)})}
               required
             />
           </div>
           <div className="form-field">
             <label>First Name *</label>
             <input
+              name="firstname"
               type="text"
               value={newEmployee.firstname}
-              onChange={(e) => setNewEmployee({...newEmployee, firstname: e.target.value})}
+              onChange={(e) => setNewEmployee({...newEmployee, firstname: onlyLetters(e.target.value)})}
               required
             />
           </div>
+          
           <div className="form-field">
             <label>Middle Name</label>
             <input
+              name="middlename"
               type="text"
               value={newEmployee.middlename}
-              onChange={(e) => setNewEmployee({...newEmployee, middlename: e.target.value})}
+              onChange={(e) => setNewEmployee({...newEmployee, middlename: onlyLetters(e.target.value)})}
             />
           </div>
           <div className="form-field">
             <label>Suffix</label>
             <input
+              name="suffix"
               type="text"
               value={newEmployee.suffix}
-              onChange={(e) => setNewEmployee({...newEmployee, suffix: e.target.value})}
+              onChange={(e) => setNewEmployee({...newEmployee, suffix: onlyLetters(e.target.value)})}
             />
           </div>
           <div className="form-field">
             <label>Birthdate *</label>
             <input
+              name="birthdate"
               type="date"
               value={newEmployee.birthdate}
               onChange={(e) => setNewEmployee({...newEmployee, birthdate: e.target.value})}
@@ -185,22 +227,26 @@ function EmployeeProfiling() {
           <div className="form-field">
             <label>Age</label>
             <input
+              name="age"
               type="text"
               value={newEmployee.age}
-              onChange={(e) => setNewEmployee({...newEmployee, age: e.target.value})}
+              onChange={(e) => setNewEmployee({...newEmployee, age: onlyDigits(e.target.value)})}
             />
           </div>
+          
           <div className="form-field">
             <label>Room</label>
             <input
+              name="room"
               type="text"
               value={newEmployee.room}
-              onChange={(e) => setNewEmployee({...newEmployee, room: e.target.value})}
+              onChange={(e) => setNewEmployee({...newEmployee, room: onlyDigits(e.target.value)})}
             />
           </div>
           <div className="form-field">
             <label>Admission Date</label>
             <input
+              name="admissionDate"
               type="datetime-local"
               value={newEmployee.admissionDate}
               onChange={(e) => setNewEmployee({...newEmployee, admissionDate: e.target.value})}
@@ -209,6 +255,7 @@ function EmployeeProfiling() {
           <div className="form-field">
             <label>Discharge Date</label>
             <input
+              name="dischargeDate"
               type="datetime-local"
               value={newEmployee.dischargeDate}
               onChange={(e) => setNewEmployee({...newEmployee, dischargeDate: e.target.value})}
@@ -217,6 +264,7 @@ function EmployeeProfiling() {
           <div className="form-field">
             <label>Sex</label>
             <select
+              name="sex"
               value={newEmployee.sex}
               onChange={(e) => setNewEmployee({...newEmployee, sex: e.target.value})}
             >
@@ -225,28 +273,32 @@ function EmployeeProfiling() {
               <option value="Female">Female</option>
             </select>
           </div>
+          
           <div className="form-field">
             <label>Height (cm)</label>
             <input
+              name="height"
               type="text"
               value={newEmployee.height}
-              onChange={(e) => setNewEmployee({...newEmployee, height: e.target.value})}
+              onChange={(e) => setNewEmployee({...newEmployee, height: onlyDigits(e.target.value)})}
             />
           </div>
           <div className="form-field">
             <label>Weight (kg)</label>
             <input
+              name="weight"
               type="text"
               value={newEmployee.weight}
-              onChange={(e) => setNewEmployee({...newEmployee, weight: e.target.value})}
+              onChange={(e) => setNewEmployee({...newEmployee, weight: onlyDigits(e.target.value)})}
             />
           </div>
           <div className="form-field">
             <label>Complaint</label>
             <input
+              name="complaint"
               type="text"
               value={newEmployee.complaint}
-              onChange={(e) => setNewEmployee({...newEmployee, complaint: e.target.value})}
+              onChange={(e) => setNewEmployee({...newEmployee, complaint: onlyLetters(e.target.value)})}
             />
           </div>
           <div className="form-field">
@@ -267,6 +319,28 @@ function EmployeeProfiling() {
           className="search-input"
         />
       </div>
+      {/* Edit Modal */}
+      {editItem && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h3>Edit Patient</h3>
+              <button className="close-btn" onClick={cancelEdit}>&times;</button>
+            </div>
+            <div className="patient-details">
+              <ItemEditForm
+                item={editItem}
+                onChange={handleEditChange}
+                onSave={saveEdit}
+                onCancel={cancelEdit}
+                loading={editLoading}
+                sexOptions={sexOptions}
+                civilStatusOptions={civilStatusOptions}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="employees-section">
         <h3>Patient List ({filteredEmployees.length})</h3>
@@ -292,7 +366,9 @@ function EmployeeProfiling() {
                   <td>{emp.room}</td>
                   <td>{emp.admissionDate ? new Date(emp.admissionDate).toLocaleString() : ''}</td>
                   <td>
+                    <button onClick={() => openEdit(emp)} className="edit-btn">Edit</button>
                     <button onClick={() => viewPatient(emp)} className="view-btn">View</button>
+                    <button onClick={() => deleteEmployee(emp.id)} className="delete-btn">Delete</button>
                   </td>
                 </tr>
               ))}
