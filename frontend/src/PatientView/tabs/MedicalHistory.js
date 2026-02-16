@@ -1,51 +1,92 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import axios from "axios";
 import "./MedicalHistory.css";
 
-function MedicalHistory() {
-  const saved = (() => {
+function MedicalHistory({ patientId }) {
+  const [lib, setLib] = useState([]); // {mdisease_code, mdisease_desc}
+  const [selected, setSelected] = useState({}); // code => bool
+  const [loading, setLoading] = useState(false);
+
+  const fetchLibrary = useCallback(async () => {
     try {
-      return JSON.parse(localStorage.getItem('medicalHistorySelections') || '{}');
-    } catch (e) {
-      return {};
+      const res = await axios.get('/api/lib/mdiseases');
+      setLib(res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch library', err);
     }
-  })();
-
-  const [history, setHistory] = useState({
-    allergy: false,
-    asthma: false,
-    cancer: false,
-    cerebrovascularDisease: false,
-    coronaryArteryDisease: false,
-    diabetesMellitus: false,
-    emphysema: false,
-    epilepsySeizureDisorder: false,
-    hepatitis: false,
-    hyperlipidemia: false,
-    hypertension: false,
-    pepticUlcer: false,
-    pneumonia: false,
-    thyroidDisease: false,
-    pulmonaryTuberculosis: false,
-    extrapulmonaryTuberculosis: false,
-    urinaryTractInfection: false,
-    mentalIllness: false,
-    others: false,
-  });
-
-  // On mount, merge saved selections
-  useEffect(() => {
-    if (saved && Object.keys(saved).length) {
-      setHistory(prev => ({ ...prev, ...saved }));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleChange = (field, value) => {
-    setHistory((prev) => {
-      const next = { ...prev, [field]: value };
+  const fetchPatientSelections = useCallback(async () => {
+    if (!patientId) return;
+    try {
+      const res = await axios.get(`/api/patients/${patientId}/medical-history`);
+      const map = {};
+      (res.data || []).forEach((it) => {
+        map[it.disease_code] = !!it.is_checked;
+      });
+      setSelected(map);
+    } catch (err) {
+      console.error('Failed to fetch patient selections', err);
+      // fallback: load from localStorage so selections persist even without backend
       try {
-        localStorage.setItem('medicalHistorySelections', JSON.stringify(next));
-      } catch (e) {}
+        const key = `medicalHistorySelections_${patientId}`;
+        const saved = JSON.parse(localStorage.getItem(key) || '{}');
+        setSelected(saved || {});
+      } catch (e) {
+        setSelected({});
+      }
+    }
+  }, [patientId]);
+
+  useEffect(() => {
+    fetchLibrary();
+    const t = setInterval(fetchLibrary, 5000);
+    return () => clearInterval(t);
+  }, [fetchLibrary]);
+
+  useEffect(() => {
+    fetchPatientSelections();
+  }, [fetchPatientSelections]);
+
+  const saveSelections = async (nextSelected) => {
+    if (!patientId) return;
+    // always save locally as a fallback for persistence
+    try {
+      const key = `medicalHistorySelections_${patientId}`;
+      localStorage.setItem(key, JSON.stringify(nextSelected));
+    } catch (e) {}
+    setLoading(true);
+    try {
+      const items = lib.map((d) => ({
+        disease_code: d.mdisease_code || d.Code || d.code,
+        disease_name: d.mdisease_desc || d.Desc || d.desc,
+        is_checked: !!nextSelected[(d.mdisease_code || d.Code || d.code)]
+      }));
+      await axios.post(`/api/patients/${patientId}/medical-history`, items);
+    } catch (err) {
+      console.error('Failed to save selections', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleToggle = (code, checked) => {
+    setSelected((prev) => {
+      const next = { ...prev };
+      const isNone = code === '999' || code === 'None';
+      if (isNone && checked) {
+        for (const k of Object.keys(next)) next[k] = false;
+        next[code] = true;
+      } else if (isNone && !checked) {
+        next[code] = false;
+      } else {
+        if (Object.keys(next).some(k => (k === '999' || k === 'None') && next[k])) {
+          next['999'] = false;
+          next['None'] = false;
+        }
+        next[code] = checked;
+      }
+      saveSelections(next);
       return next;
     });
   };
@@ -55,34 +96,30 @@ function MedicalHistory() {
       <div className="medical-history-section">
         <h3>Medical History Specifics</h3>
         <div className="medical-checkboxes">
-          {/* Checkboxes Group */}
           <div className="checkbox-group">
-            {Object.keys(history).map((key) => (
-              <label key={key}>
-                <input
-                  type="checkbox"
-                  checked={history[key]}
-                  onChange={(e) => handleChange(key, e.target.checked)}
-                />
-                {/* Converts camelCase to Title Case (e.g. diabetesMellitus -> Diabetes Mellitus) */}
-                <span>
-                  {key
-                    .replace(/([A-Z])/g, " $1")
-                    .replace(/^./, (str) => str.toUpperCase())}
-                </span>
-              </label>
-            ))}
+            {lib.map((d) => {
+              const code = d.mdisease_code || d.Code || d.code;
+              const desc = d.mdisease_desc || d.Desc || d.desc || '';
+              const isNone = code === '999' || (desc && desc.toLowerCase() === 'none');
+              return (
+                <label key={code}>
+                  <input
+                    type="checkbox"
+                    checked={!!selected[code]}
+                    disabled={!!selected['999'] && !isNone}
+                    onChange={(e) => handleToggle(code, e.target.checked)}
+                  />
+                  <span>{desc}</span>
+                </label>
+              );
+            })}
           </div>
 
           <div className="medical-details">
-            <textarea
-              placeholder="Enter medical history details here..."
-              rows="10"
-            ></textarea>
+            <textarea placeholder="Enter medical history details here..." rows="10"></textarea>
           </div>
         </div>
 
-        {/* Dynamic Code Table */}
         <div className="medical-codes-table">
           <table>
             <thead>
@@ -92,49 +129,17 @@ function MedicalHistory() {
               </tr>
             </thead>
             <tbody>
-              {history.allergy && (
-                <tr>
-                  <td>001</td>
-                  <td>Allergy</td>
-                </tr>
-              )}
-              {history.asthma && (
-                <tr>
-                  <td>002</td>
-                  <td>Asthma</td>
-                </tr>
-              )}
-              {history.cancer && (
-                <tr>
-                  <td>003</td>
-                  <td>Cancer</td>
-                </tr>
-              )}
-              {history.diabetesMellitus && (
-                <tr>
-                  <td>006</td>
-                  <td>Diabetes Mellitus</td>
-                </tr>
-              )}
-              {history.emphysema && (
-                <tr>
-                  <td>007</td>
-                  <td>Emphysema</td>
-                </tr>
-              )}
-              {history.pepticUlcer && (
-                <tr>
-                  <td>012</td>
-                  <td>Peptic Ulcer</td>
-                </tr>
-              )}
-              {history.thyroidDisease && (
-                <tr>
-                  <td>014</td>
-                  <td>Thyroid Disease</td>
-                </tr>
-              )}
-              {/* Add other mappings here as needed */}
+              {lib.map((d) => {
+                const code = d.mdisease_code || d.Code || d.code;
+                const desc = d.mdisease_desc || d.Desc || d.desc || '';
+                if (!selected[code]) return null;
+                return (
+                  <tr key={code}>
+                    <td>{code}</td>
+                    <td>{desc}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

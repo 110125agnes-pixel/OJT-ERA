@@ -13,7 +13,6 @@ import FemaleHistory from "./tabs/FemaleHistory";
 import SocialHistory from "./tabs/SocialHistory";
 import PertinentPhysicalExamination from "./tabs/PertinentPhysicalExamination";
 import DiseaseSummary from "./tabs/DiseaseSummary";
-import SurgerySummary from "./tabs/SurgerySummary";
 
 
 function PatientView() {
@@ -193,10 +192,9 @@ function PatientView() {
 
         {activeTab === "Profiling" && (
           <div className="sub-tabs">
-            {[ 
+            {[
               "Medical",
               "Surgery",
-              "Surgery Summary",
               "Family",
               "Immunization",
               "Social History",
@@ -223,7 +221,7 @@ function PatientView() {
         {activeTab === "Profiling" && (
           <>
             {/* Renders MedicalHistory.js */}
-            {activeSubTab === "Medical" && <MedicalHistory />}
+            {activeSubTab === "Medical" && <MedicalHistory patientId={id} />}
 
             {/* Renders PertinentPhysicalExamination.js */}
             {activeSubTab === "*Pertinent Physical Examinations" && <PertinentPhysicalExamination />}
@@ -239,8 +237,7 @@ function PatientView() {
             {/* Renders DiseaseSummary.js (labelled Patient History) */}
             {activeSubTab === "Patient History" && <DiseaseSummary />}
 
-            {/* Renders SurgerySummary.js */}
-            {activeSubTab === "Surgery Summary" && <SurgerySummary />}
+            
 
             {/* Renders Surgical.js */}
             {activeSubTab === "Surgery" && <Surgical />}
