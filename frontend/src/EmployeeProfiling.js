@@ -38,6 +38,35 @@ function EmployeeProfiling() {
   const onlyDigits = (val) => (val || '').toString().replace(/\D+/g, '');
   const onlyLetters = (val) => (val || '').toString().replace(/[^a-zA-Z\s]+/g, '');
 
+  // Date helpers: format values for backend MySQL fields
+  // - `toSQLDate` converts a date-like string to `YYYY-MM-DD` which
+  //   matches MySQL `DATE` column expectations.
+  // - `toSQLDateTime` converts to `YYYY-MM-DD HH:MM:SS` which matches
+  //   MySQL `DATETIME` columns. These helpers prevent invalid/ambiguous
+  //   date formats being sent from the browser (which can trigger 500s).
+  const toSQLDate = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d)) return dateStr;
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const toSQLDateTime = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d)) return dateStr;
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
+  };
+
   useEffect(() => {
     fetchEmployees();
   }, []);
@@ -64,7 +93,18 @@ function EmployeeProfiling() {
     }
     try {
       setLoading(true);
-      const data = await itemService.createItem(newEmployee);
+      // Prepare payload: explicitly normalize date/time fields so the
+      // backend receives consistent formats (DATE and DATETIME). This
+      // avoids server-side parsing errors when the user edits twice.
+      const payload = {
+        ...newEmployee,
+        // MySQL DATE
+        birthdate: toSQLDate(newEmployee.birthdate),
+        // MySQL DATETIME
+        admissionDate: toSQLDateTime(newEmployee.admissionDate),
+        dischargeDate: toSQLDateTime(newEmployee.dischargeDate),
+      };
+      const data = await itemService.createItem(payload);
       setEmployees([...employees, data]);
       setNewEmployee({
         caseNo: '',
@@ -121,7 +161,16 @@ function EmployeeProfiling() {
     if (!editItem) return;
     try {
       setEditLoading(true);
-      const updated = await itemService.updateItem(editItem.id, editItem);
+      // Prepare payload for update: normalize dates so the PUT body
+      // contains the same formats the backend expects. This reduces
+      // chance of server errors when updating an already-edited record.
+      const payload = {
+        ...editItem,
+        birthdate: toSQLDate(editItem.birthdate),
+        admissionDate: toSQLDateTime(editItem.admissionDate),
+        dischargeDate: toSQLDateTime(editItem.dischargeDate),
+      };
+      const updated = await itemService.updateItem(editItem.id, payload);
       setEmployees(employees.map(e => e.id === updated.id ? updated : e));
       setEditItem(null);
       setError('');
