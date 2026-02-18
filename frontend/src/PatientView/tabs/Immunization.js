@@ -1,37 +1,36 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 import './Immunization.css';
 
-function Immunization() {
-  const [immunization, setImmunization] = useState({
-    // Children
-    childrenNone: false,
-    bcg: true,
-    opv1: false,
-    opv2: false,
-    opv3: false,
-    dpt1: true,
-    dpt2: true,
-    dpt3: true,
-    measles: false,
-    hepatitisB1: false,
-    hepatitisB2: false,
-    hepatitisB3: true,
-    hepatitisA: true,
-    varicellaChickenPox: true,
-    // Young
-    youngNone: false,
-    hpv: false,
-    mmr: true,
-    // Pregnant
-    pregnantNone: true,
-    tetanusToxoid: false,
-    // Elderly
-    elderlyNone: true,
-    pnuemococcalVaccine: false,
-    fluVaccine: false,
-    // Other
-    otherImmunization: ''
-  });
+function Immunization({ patientId }) {
+  const [childLib, setChildLib] = useState([]);
+  const [youngLib, setYoungLib] = useState([]);
+  const [pregLib, setPregLib] = useState([]);
+  const [elderlyLib, setElderlyLib] = useState([]);
+
+  const fetchLibs = useCallback(async () => {
+    try {
+      const [cRes, yRes, pRes, eRes] = await Promise.all([
+        axios.get('/api/lib/immchild'),
+        axios.get('/api/lib/immyoungw'),
+        axios.get('/api/lib/immpregw'),
+        axios.get('/api/lib/immelderly'),
+      ]);
+      setChildLib(cRes.data || []);
+      setYoungLib(yRes.data || []);
+      setPregLib(pRes.data || []);
+      setElderlyLib(eRes.data || []);
+    } catch (err) {
+      console.error('Failed to fetch immunization libraries', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLibs();
+  }, [fetchLibs]);
+
+  const mapCode = (item) => item.code || item.vaccine_code || item.IMM_CODE || item.imm_code || item.Code || item.code;
+  const mapName = (item) => item.name || item.vaccine_name || item.IMM_DESC || item.imm_desc || item.Desc || item.desc || '';
 
   return (
     <div className="immunization-content">
@@ -41,118 +40,16 @@ function Immunization() {
           <div className="immunization-section">
             <h4>1. Children</h4>
             <div className="immunization-grid">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.childrenNone}
-                  onChange={(e) => setImmunization({...immunization, childrenNone: e.target.checked})}
-                />
-                <span>None</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.dpt1}
-                  onChange={(e) => setImmunization({...immunization, dpt1: e.target.checked})}
-                />
-                <span>DPT1</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.hepatitisB2}
-                  onChange={(e) => setImmunization({...immunization, hepatitisB2: e.target.checked})}
-                />
-                <span>Hepatitis B2</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.bcg}
-                  onChange={(e) => setImmunization({...immunization, bcg: e.target.checked})}
-                />
-                <span>BCG</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.dpt2}
-                  onChange={(e) => setImmunization({...immunization, dpt2: e.target.checked})}
-                />
-                <span>DPT2</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.hepatitisB3}
-                  onChange={(e) => setImmunization({...immunization, hepatitisB3: e.target.checked})}
-                />
-                <span>Hepatitis B3</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.opv1}
-                  onChange={(e) => setImmunization({...immunization, opv1: e.target.checked})}
-                />
-                <span>OPV1</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.dpt3}
-                  onChange={(e) => setImmunization({...immunization, dpt3: e.target.checked})}
-                />
-                <span>DPT3</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.hepatitisA}
-                  onChange={(e) => setImmunization({...immunization, hepatitisA: e.target.checked})}
-                />
-                <span>Hepatitis A</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.opv2}
-                  onChange={(e) => setImmunization({...immunization, opv2: e.target.checked})}
-                />
-                <span>OPV2</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.measles}
-                  onChange={(e) => setImmunization({...immunization, measles: e.target.checked})}
-                />
-                <span>Measles</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.varicellaChickenPox}
-                  onChange={(e) => setImmunization({...immunization, varicellaChickenPox: e.target.checked})}
-                />
-                <span>Varicella (Chicken Pox)</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.opv3}
-                  onChange={(e) => setImmunization({...immunization, opv3: e.target.checked})}
-                />
-                <span>OPV3</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.hepatitisB1}
-                  onChange={(e) => setImmunization({...immunization, hepatitisB1: e.target.checked})}
-                />
-                <span>Hepatitis B1</span>
-              </label>
+              {childLib.map((item) => {
+                const code = mapCode(item);
+                const name = mapName(item);
+                return (
+                  <label key={code}>
+                    <input type="checkbox" />
+                    <span>{name}</span>
+                  </label>
+                );
+              })}
             </div>
           </div>
 
@@ -160,30 +57,16 @@ function Immunization() {
           <div className="immunization-section">
             <h4>2. Young</h4>
             <div className="immunization-grid">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.youngNone}
-                  onChange={(e) => setImmunization({...immunization, youngNone: e.target.checked})}
-                />
-                <span>None</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.hpv}
-                  onChange={(e) => setImmunization({...immunization, hpv: e.target.checked})}
-                />
-                <span>HPV</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.mmr}
-                  onChange={(e) => setImmunization({...immunization, mmr: e.target.checked})}
-                />
-                <span>MMR</span>
-              </label>
+              {youngLib.map((item) => {
+                const code = mapCode(item);
+                const name = mapName(item);
+                return (
+                  <label key={code}>
+                    <input type="checkbox" />
+                    <span>{name}</span>
+                  </label>
+                );
+              })}
             </div>
           </div>
 
@@ -191,22 +74,16 @@ function Immunization() {
           <div className="immunization-section">
             <h4>3. Pregnant</h4>
             <div className="immunization-grid">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.pregnantNone}
-                  onChange={(e) => setImmunization({...immunization, pregnantNone: e.target.checked})}
-                />
-                <span>None</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.tetanusToxoid}
-                  onChange={(e) => setImmunization({...immunization, tetanusToxoid: e.target.checked})}
-                />
-                <span>Tetanus Toxoid</span>
-              </label>
+              {pregLib.map((item) => {
+                const code = mapCode(item);
+                const name = mapName(item);
+                return (
+                  <label key={code}>
+                    <input type="checkbox" />
+                    <span>{name}</span>
+                  </label>
+                );
+              })}
             </div>
           </div>
 
@@ -214,30 +91,16 @@ function Immunization() {
           <div className="immunization-section">
             <h4>4. Elderly</h4>
             <div className="immunization-grid">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.elderlyNone}
-                  onChange={(e) => setImmunization({...immunization, elderlyNone: e.target.checked})}
-                />
-                <span>None</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.pnuemococcalVaccine}
-                  onChange={(e) => setImmunization({...immunization, pnuemococcalVaccine: e.target.checked})}
-                />
-                <span>Pnuemococcal Vaccine</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={immunization.fluVaccine}
-                  onChange={(e) => setImmunization({...immunization, fluVaccine: e.target.checked})}
-                />
-                <span>Flu Vaccine</span>
-              </label>
+              {elderlyLib.map((item) => {
+                const code = mapCode(item);
+                const name = mapName(item);
+                return (
+                  <label key={code}>
+                    <input type="checkbox" />
+                    <span>{name}</span>
+                  </label>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -246,12 +109,7 @@ function Immunization() {
           {/* Other Immunization Section */}
           <div className="immunization-section other-section">
             <h4>5. Other Immunization</h4>
-            <textarea
-              value={immunization.otherImmunization}
-              onChange={(e) => setImmunization({...immunization, otherImmunization: e.target.value})}
-              placeholder="lorem epsum 12345"
-              rows="30"
-            ></textarea>
+            <textarea placeholder="Other immunization notes" rows="10"></textarea>
           </div>
         </div>
       </div>
