@@ -1,104 +1,137 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 import './FamilyHistory.css';
 
-const FamilyHistory = () => {
-  const [selectedDiseases, setSelectedDiseases] = useState({
-    none: false,
-    allergy: false,
-    asthma: false,
-    cancer: false,
-    cerebrovascularDisease: false,
-    coronaryArteryDisease: false,
-    diabetesMellitus: false,
-    emphysema: false,
-    epilepsySeizureDisorder: false,
-    hepatitis: false,
-    hyperlipidemia: false,
-    hypertension: false,
-    pepticUlcer: false,
-    pneumonia: false,
-    thyroidDisease: false,
-    pulmonaryTuberculosis: false,
-    extrapulmonaryTuberculosis: false,
-    urinaryTractInfection: false,
-    mentalIllness: false,
-    others: false
-  });
-
+const FamilyHistory = ({ patientId }) => {
+  const [lib, setLib] = useState([]); // disease library from mdiseases
+  const [selected, setSelected] = useState({}); // code => bool
   const [notes, setNotes] = useState('');
   const [tableData, setTableData] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  const diseaseMapping = {
-    none: { code: '000', name: 'None' },
-    allergy: { code: '001', name: 'Allergy' },
-    asthma: { code: '002', name: 'Asthma' },
-    cancer: { code: '003', name: 'Cancer' },
-    cerebrovascularDisease: { code: '004', name: 'Cerebrovascular Disease' },
-    coronaryArteryDisease: { code: '005', name: 'Coronary Artery Disease' },
-    diabetesMellitus: { code: '006', name: 'Diabetes Mellitus' },
-    emphysema: { code: '007', name: 'Emphysema' },
-    epilepsySeizureDisorder: { code: '008', name: 'Epilepsy/Seizure Disorder' },
-    hepatitis: { code: '009', name: 'Hepatitis' },
-    hyperlipidemia: { code: '010', name: 'Hyperlipidemia' },
-    hypertension: { code: '011', name: 'Hypertension' },
-    pepticUlcer: { code: '012', name: 'Peptic Ulcer' },
-    pneumonia: { code: '013', name: 'Pneumonia' },
-    thyroidDisease: { code: '014', name: 'Thyroid Disease' },
-    pulmonaryTuberculosis: { code: '015', name: 'Pulmonary Tuberculosis' },
-    extrapulmonaryTuberculosis: { code: '016', name: 'Extrapulmonary Tuberculosis' },
-    urinaryTractInfection: { code: '017', name: 'Urinary Tract Infection' },
-    mentalIllness: { code: '018', name: 'Mental Illness' },
-    others: { code: '998', name: 'Others' }
-  };
+  const fetchLibrary = useCallback(async () => {
+    try {
+      const res = await axios.get('/api/lib/mdiseases');
+      setLib(res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch library', err);
+    }
+  }, []);
 
-  const handleCheckboxChange = (disease) => {
-    setSelectedDiseases(prev => ({
-      ...prev,
-      [disease]: !prev[disease]
-    }));
-  };
+  const fetchFamily = useCallback(async () => {
+    if (!patientId) return;
+    try {
+      const res = await axios.get(`/api/patients/${patientId}/family-history`);
+      const items = res.data || [];
+      const nextSelected = {};
+      const table = [];
+      items.forEach(it => {
+        nextSelected[it.disease_code] = !!it.is_checked;
+        if (it.is_checked) table.push({ code: it.disease_code, description: it.disease_name || '' });
+      });
+      setSelected(nextSelected);
+      setTableData(table);
+      if (items.length > 0 && items[0].notes) setNotes(items[0].notes);
+    } catch (err) {
+      console.error('Failed to fetch family history', err);
+      try {
+        const key = `familyHistory_${patientId}`;
+        const saved = JSON.parse(localStorage.getItem(key) || '{}');
+        if (saved.selected) setSelected(saved.selected);
+        if (saved.tableData) setTableData(saved.tableData);
+        if (saved.notes) setNotes(saved.notes);
+      } catch (e) {}
+    }
+  }, [patientId]);
 
-  const handleAdd = () => {
-    const selected = Object.entries(selectedDiseases)
-      .filter(([_, isSelected]) => isSelected)
-      .map(([disease]) => ({
-        code: diseaseMapping[disease].code,
-        description: diseaseMapping[disease].name
-      }));
+  useEffect(() => {
+    fetchLibrary();
+  }, [fetchLibrary]);
 
-    if (selected.length > 0) {
-      setTableData(selected);
+  useEffect(() => {
+    fetchFamily();
+  }, [fetchFamily]);
+
+  const saveFamily = async (payload) => {
+    if (!patientId) return;
+    setLoading(true);
+    try {
+      await axios.post(`/api/patients/${patientId}/family-history`, payload);
+    } catch (err) {
+      console.error('Failed to save family history', err);
+      throw err;
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleSave = () => {
-    console.log('Saving data:', { selectedDiseases, notes, tableData });
-    alert('Data saved successfully!');
+  const handleToggle = (code, checked) => {
+    setSelected(prev => {
+      const next = { ...prev };
+      const desc = (lib.find(d => (d.mdisease_code || d.Code || d.code) === code) || {}).mdisease_desc || '';
+      const isNone = code === '999' || (desc && desc.toLowerCase() === 'none');
+      if (isNone && checked) {
+        // clear others
+        for (const k of Object.keys(next)) next[k] = false;
+        next[code] = true;
+      } else if (isNone && !checked) {
+        next[code] = false;
+      } else {
+        // if None is set, clear it
+        for (const k of Object.keys(next)) {
+          const kd = (lib.find(d => (d.mdisease_code || d.Code || d.code) === k) || {}).mdisease_desc || '';
+          if (kd && kd.toLowerCase() === 'none') next[k] = false;
+        }
+        next[code] = checked;
+      }
+
+      // update tableData from lib
+      const table = lib
+        .map(d => ({ code: d.mdisease_code || d.Code || d.code, description: d.mdisease_desc || d.Desc || d.desc || '' }))
+        .filter(d => next[d.code]);
+
+      setTableData(table);
+
+      // local fallback
+      try {
+        const key = `familyHistory_${patientId || 'local'}`;
+        localStorage.setItem(key, JSON.stringify({ selected: next, tableData: table, notes }));
+      } catch (e) {}
+
+      return next;
+    });
+  };
+
+  const handleAdd = () => {
+    const table = lib
+      .map(d => ({ code: d.mdisease_code || d.Code || d.code, description: d.mdisease_desc || d.Desc || d.desc || '' }))
+      .filter(d => selected[d.code]);
+    if (table.length > 0) setTableData(table);
+  };
+
+  const handleSave = async () => {
+    const payload = tableData.map(t => ({ disease_code: t.code, disease_name: t.description, notes: notes || '', is_checked: true }));
+    try {
+      // always save locally
+      const key = `familyHistory_${patientId || 'local'}`;
+      localStorage.setItem(key, JSON.stringify({ selected, tableData, notes }));
+    } catch (e) {}
+
+    if (!patientId) {
+      alert('Saved locally (no patient selected)');
+      return;
+    }
+
+    try {
+      await saveFamily(payload);
+      alert('Family history saved');
+    } catch (err) {
+      alert('Failed to save to server; changes saved locally');
+    }
   };
 
   const handleClear = () => {
-    setSelectedDiseases({
-      none: false,
-      allergy: false,
-      asthma: false,
-      cancer: false,
-      cerebrovascularDisease: false,
-      coronaryArteryDisease: false,
-      diabetesMellitus: false,
-      emphysema: false,
-      epilepsySeizureDisorder: false,
-      hepatitis: false,
-      hyperlipidemia: false,
-      hypertension: false,
-      pepticUlcer: false,
-      pneumonia: false,
-      thyroidDisease: false,
-      pulmonaryTuberculosis: false,
-      extrapulmonaryTuberculosis: false,
-      urinaryTractInfection: false,
-      mentalIllness: false,
-      others: false
-    });
+    setSelected({});
     setNotes('');
     setTableData([]);
   };
@@ -112,26 +145,22 @@ const FamilyHistory = () => {
             <h3>Family History Specifics</h3>
           </div>
           <div className="checkbox-list-family">
-            <label><input type="checkbox" checked={selectedDiseases.none} onChange={() => handleCheckboxChange('none')} /> None</label>
-            <label><input type="checkbox" checked={selectedDiseases.allergy} onChange={() => handleCheckboxChange('allergy')} /> Allergy</label>
-            <label><input type="checkbox" checked={selectedDiseases.asthma} onChange={() => handleCheckboxChange('asthma')} /> Asthma</label>
-            <label><input type="checkbox" checked={selectedDiseases.cancer} onChange={() => handleCheckboxChange('cancer')} /> Cancer</label>
-            <label><input type="checkbox" checked={selectedDiseases.cerebrovascularDisease} onChange={() => handleCheckboxChange('cerebrovascularDisease')} /> Cerebrovascular Disease</label>
-            <label><input type="checkbox" checked={selectedDiseases.coronaryArteryDisease} onChange={() => handleCheckboxChange('coronaryArteryDisease')} /> Coronary Artery Disease</label>
-            <label><input type="checkbox" checked={selectedDiseases.diabetesMellitus} onChange={() => handleCheckboxChange('diabetesMellitus')} /> Diabetes Mellitus</label>
-            <label><input type="checkbox" checked={selectedDiseases.emphysema} onChange={() => handleCheckboxChange('emphysema')} /> Emphysema</label>
-            <label><input type="checkbox" checked={selectedDiseases.epilepsySeizureDisorder} onChange={() => handleCheckboxChange('epilepsySeizureDisorder')} /> Epilepsy/Seizure Disorder</label>
-            <label><input type="checkbox" checked={selectedDiseases.hepatitis} onChange={() => handleCheckboxChange('hepatitis')} /> Hepatitis</label>
-            <label><input type="checkbox" checked={selectedDiseases.hyperlipidemia} onChange={() => handleCheckboxChange('hyperlipidemia')} /> Hyperlipidemia</label>
-            <label><input type="checkbox" checked={selectedDiseases.hypertension} onChange={() => handleCheckboxChange('hypertension')} /> Hypertension</label>
-            <label><input type="checkbox" checked={selectedDiseases.pepticUlcer} onChange={() => handleCheckboxChange('pepticUlcer')} /> Peptic Ulcer</label>
-            <label><input type="checkbox" checked={selectedDiseases.pneumonia} onChange={() => handleCheckboxChange('pneumonia')} /> Pneumonia</label>
-            <label><input type="checkbox" checked={selectedDiseases.thyroidDisease} onChange={() => handleCheckboxChange('thyroidDisease')} /> Thyroid Disease</label>
-            <label><input type="checkbox" checked={selectedDiseases.pulmonaryTuberculosis} onChange={() => handleCheckboxChange('pulmonaryTuberculosis')} /> Pulmonary Tuberculosis</label>
-            <label><input type="checkbox" checked={selectedDiseases.extrapulmonaryTuberculosis} onChange={() => handleCheckboxChange('extrapulmonaryTuberculosis')} /> Extrapulmonary Tuberculosis</label>
-            <label><input type="checkbox" checked={selectedDiseases.urinaryTractInfection} onChange={() => handleCheckboxChange('urinaryTractInfection')} /> Urinary Tract Infection</label>
-            <label><input type="checkbox" checked={selectedDiseases.mentalIllness} onChange={() => handleCheckboxChange('mentalIllness')} /> Mental Illness</label>
-            <label><input type="checkbox" checked={selectedDiseases.others} onChange={() => handleCheckboxChange('others')} /> Others</label>
+            {lib.map((d) => {
+              const code = d.mdisease_code || d.Code || d.code;
+              const desc = d.mdisease_desc || d.Desc || d.desc || '';
+              const isNone = code === '999' || (desc && desc.toLowerCase() === 'none');
+              return (
+                <label key={code}>
+                  <input
+                    type="checkbox"
+                    checked={!!selected[code]}
+                    disabled={!!selected['999'] && !isNone}
+                    onChange={(e) => handleToggle(code, e.target.checked)}
+                  />
+                  {desc}
+                </label>
+              );
+            })}
           </div>
         </div>
 

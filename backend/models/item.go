@@ -89,6 +89,13 @@ func GetItemByID(id int) (*Item, error) {
 
 // CreateItem inserts a new item into the database
 func CreateItem(item *Item) error {
+	if item.AdmissionDate == "" {
+		item.AdmissionDate = ""
+	}
+	if item.DischargeDate == "" {
+		item.DischargeDate = ""
+	}
+
 	result, err := DB.Exec(
 		"INSERT INTO items (case_no, hospital_no, lastname, firstname, middlename, suffix, birthdate, age, room, admission_date, discharge_date, sex, height, weight, complaint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		item.CaseNo, item.HospitalNo, item.Lastname, item.Firstname, item.Middlename, item.Suffix, item.Birthdate, item.Age, item.Room, item.AdmissionDate, item.DischargeDate, item.Sex, item.Height, item.Weight, item.Complaint,
@@ -108,6 +115,13 @@ func CreateItem(item *Item) error {
 
 // UpdateItem updates an existing item in the database
 func UpdateItem(id int, item *Item) (int64, error) {
+	if item.AdmissionDate == "" {
+		item.AdmissionDate = ""
+	}
+	if item.DischargeDate == "" {
+		item.DischargeDate = ""
+	}
+
 	result, err := DB.Exec(
 		"UPDATE items SET case_no = ?, hospital_no = ?, lastname = ?, firstname = ?, middlename = ?, suffix = ?, birthdate = ?, age = ?, room = ?, admission_date = ?, discharge_date = ?, sex = ?, height = ?, weight = ?, complaint = ? WHERE id = ?",
 		item.CaseNo, item.HospitalNo, item.Lastname, item.Firstname, item.Middlename, item.Suffix, item.Birthdate, item.Age, item.Room, item.AdmissionDate, item.DischargeDate, item.Sex, item.Height, item.Weight, item.Complaint, id,

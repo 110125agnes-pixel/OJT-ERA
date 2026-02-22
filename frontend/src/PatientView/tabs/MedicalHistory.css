@@ -109,3 +109,28 @@
 .medical-codes-table tbody tr:hover {
   background: #f9f9f9;
 }
+
+.crud-buttons {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+.crud-buttons .MuiButtonGroup-root {
+  display: flex;
+  gap: 10px;
+}
+
+.crud-buttons .MuiButton-root {
+  background-color: #1976d2;
+  color: white;
+  font-weight: bold;
+  text-transform: none;
+  border-radius: 5px;
+  padding: 8px 16px;
+  transition: background-color 0.3s ease;
+}
+
+.crud-buttons .MuiButton-root:hover {
+  background-color: #115293;
+}

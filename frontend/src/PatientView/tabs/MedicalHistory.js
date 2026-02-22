@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import "./MedicalHistory.css";
+import Button from '@mui/material/Button';
+import ButtonGroup from '@mui/material/ButtonGroup';
 
 function MedicalHistory({ patientId }) {
   const [lib, setLib] = useState([]); // {mdisease_code, mdisease_desc}
   const [selected, setSelected] = useState({}); // code => bool
   const [loading, setLoading] = useState(false);
+  
 
   const fetchLibrary = useCallback(async () => {
     try {
@@ -74,6 +77,7 @@ function MedicalHistory({ patientId }) {
     setSelected((prev) => {
       const next = { ...prev };
       const isNone = code === '999' || code === 'None';
+
       if (isNone && checked) {
         for (const k of Object.keys(next)) next[k] = false;
         next[code] = true;
@@ -86,6 +90,9 @@ function MedicalHistory({ patientId }) {
         }
         next[code] = checked;
       }
+
+      
+
       saveSelections(next);
       return next;
     });
@@ -93,14 +100,19 @@ function MedicalHistory({ patientId }) {
 
   return (
     <div className="medical-content">
-      <div className="medical-history-section">
+      <div className="medical-header">
         <h3>Medical History Specifics</h3>
+        
+      </div>
+
+      <div className="medical-history-section">
         <div className="medical-checkboxes">
           <div className="checkbox-group">
             {lib.map((d) => {
               const code = d.mdisease_code || d.Code || d.code;
               const desc = d.mdisease_desc || d.Desc || d.desc || '';
               const isNone = code === '999' || (desc && desc.toLowerCase() === 'none');
+              const isOthers = code === '998';
               return (
                 <label key={code}>
                   <input

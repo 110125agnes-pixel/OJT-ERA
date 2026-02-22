@@ -61,3 +61,36 @@ export const inventoryService = {
     return response.data;
   }
 };
+
+// Surgical history API service
+export const surgicalService = {
+  // Fetch surgical library (list of known surgeries)
+  getSurgicalLibrary: async () => {
+    const response = await axios.get(`${API_BASE_URL}/lib/surgery`);
+    return response.data;
+  },
+
+  // Get saved surgical history for a patient
+  getPatientSurgicalHistory: async (patientId) => {
+    const response = await axios.get(`${API_BASE_URL}/patients/${patientId}/surgical-history`);
+    return response.data;
+  },
+
+  // Save surgical history for a patient
+  savePatientSurgicalHistory: async (patientId, payload) => {
+    const response = await axios.post(`${API_BASE_URL}/patients/${patientId}/surgical-history`, payload);
+    return response.data;
+  }
+};
+export const libService = {
+  // Get digital rectal library options
+  getDigitalRectal: async () => {
+    const response = await axios.get(`${API_BASE_URL}/lib/digital_rectal`);
+    return response.data;
+  },
+  // Get genitourinary library options
+  getGenitourinary: async () => {
+    const response = await axios.get(`${API_BASE_URL}/lib/genitourinary`);
+    return response.data;
+  },
+};

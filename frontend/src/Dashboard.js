@@ -14,6 +14,7 @@ function Dashboard({ onLogout }) {
         return <EmployeeProfiling />;
       case 'patientHistory':
         return <DiseaseSummary />;
+      
       case 'home':
       default:
         return (

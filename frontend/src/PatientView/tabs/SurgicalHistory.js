@@ -1,28 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import './SurgicalHistory.css';
+import { surgicalService } from '../../services/api';
 
-const SurgicalHistory = () => {
-  const [surgeries] = useState([
-    { id: 1, code: 'S001', name: 'Appendectomy' },
-    { id: 2, code: 'S002', name: 'Cholecystectomy' },
-    { id: 3, code: 'S003', name: 'Hernia Repair' },
-    { id: 4, code: 'S004', name: 'Cesarean Section' },
-    { id: 5, code: 'S005', name: 'Hysterectomy' },
-    { id: 6, code: 'S006', name: 'Tonsillectomy' },
-    { id: 7, code: 'S007', name: 'Cardiac Surgery' },
-    { id: 8, code: 'S008', name: 'Orthopedic Surgery' },
-    { id: 9, code: 'S009', name: 'Cataract Surgery' },
-    { id: 10, code: 'S010', name: 'Mastectomy' },
-    { id: 11, code: 'S011', name: 'Prostatectomy' },
-    { id: 12, code: 'S012', name: 'Thyroidectomy' },
-    { id: 13, code: 'S013', name: 'Spinal Surgery' },
-    { id: 14, code: 'S014', name: 'Gastric Bypass' },
-    { id: 15, code: 'S015', name: 'Kidney Surgery' },
-    { id: 16, code: 'S016', name: 'Lung Surgery' },
-    { id: 17, code: 'S017', name: 'Brain Surgery' },
-    { id: 18, code: 'S018', name: 'Joint Replacement' },
-    { id: 19, code: 'S998', name: 'Others' }
-  ]);
+const defaultSurgeries = [
+  { id: 1, code: 'S001', name: 'Appendectomy' },
+  { id: 2, code: 'S002', name: 'Cholecystectomy' },
+  { id: 3, code: 'S003', name: 'Hernia Repair' },
+  { id: 4, code: 'S004', name: 'Cesarean Section' },
+  { id: 5, code: 'S005', name: 'Hysterectomy' },
+  { id: 6, code: 'S006', name: 'Tonsillectomy' },
+  { id: 7, code: 'S007', name: 'Cardiac Surgery' },
+  { id: 8, code: 'S008', name: 'Orthopedic Surgery' },
+  { id: 9, code: 'S009', name: 'Cataract Surgery' },
+  { id: 10, code: 'S010', name: 'Mastectomy' },
+  { id: 11, code: 'S011', name: 'Prostatectomy' },
+  { id: 12, code: 'S012', name: 'Thyroidectomy' },
+  { id: 13, code: 'S013', name: 'Spinal Surgery' },
+  { id: 14, code: 'S014', name: 'Gastric Bypass' },
+  { id: 15, code: 'S015', name: 'Kidney Surgery' },
+  { id: 16, code: 'S016', name: 'Lung Surgery' },
+  { id: 17, code: 'S017', name: 'Brain Surgery' },
+  { id: 18, code: 'S018', name: 'Joint Replacement' },
+  { id: 19, code: 'S998', name: 'Others' }
+];
+
+const SurgicalHistory = ({ patientId }) => {
+  const [surgeries, setSurgeries] = useState([]);
 
   const [selectedSurgeries, setSelectedSurgeries] = useState([]);
   const [noneChecked, setNoneChecked] = useState(false);
@@ -42,6 +45,60 @@ const SurgicalHistory = () => {
     } catch (e) {}
   }, []);
 
+  // Fetch surgical library from backend on mount
+  useEffect(() => {
+    let mounted = true;
+    surgicalService.getSurgicalLibrary()
+      .then((data) => {
+        if (!mounted) return;
+        const mapped = (data || []).map((o, idx) => ({
+          id: o.id || o.SURGERY_CODE || o.surgery_code || `${idx}`,
+          code: o.SURGERY_CODE || o.code || o.surgery_code || o.id || '',
+          name: o.SURGERY_DESC || o.desc || o.description || o.name || ''
+        }));
+        setSurgeries(mapped.length ? mapped : defaultSurgeries);
+      })
+      .catch((err) => {
+        console.error('Failed to load surgical library, using defaults', err);
+        setSurgeries(defaultSurgeries);
+      });
+    return () => { mounted = false; };
+  }, []);
+
+  // If patientId provided, try loading saved surgical history from backend
+  useEffect(() => {
+    if (!patientId) return;
+    let mounted = true;
+    surgicalService.getPatientSurgicalHistory(patientId)
+      .then((data) => {
+        if (!mounted) return;
+        // accept either { selectedSurgeries: [...] } or direct array
+        const sel = data && data.selectedSurgeries ? data.selectedSurgeries : data;
+        if (Array.isArray(sel)) {
+          // normalize server shape into { id, code, name }
+          const mapped = sel.map((it, idx) => ({
+            id: it.SurgeryCode || it.surgery_code || it.SURGERY_CODE || it.id || `${idx}`,
+            code: it.SurgeryCode || it.surgery_code || it.SURGERY_CODE || it.code || it.id || `${idx}`,
+            name: it.SurgeryName || it.surgery_name || it.SURGERY_DESC || it.SURGERY_DESC || it.name || ''
+          }));
+          setSelectedSurgeries(mapped);
+        }
+      })
+      .catch((err) => {
+        console.warn('No patient surgical history from server, falling back to storage', err);
+        try {
+          const raw = localStorage.getItem('surgicalHistorySelections');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            setSelectedSurgeries(parsed.selectedSurgeries || []);
+            setNoneChecked(parsed.noneChecked || false);
+            setNotes(parsed.notes || '');
+          }
+        } catch (e) {}
+      });
+    return () => { mounted = false; };
+  }, [patientId]);
+
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentDateTime(new Date());
@@ -55,10 +112,13 @@ const SurgicalHistory = () => {
     }
 
     let next;
-    if (selectedSurgeries.find(s => s.id === surgery.id)) {
-      next = selectedSurgeries.filter(s => s.id !== surgery.id);
+    const code = surgery.code || surgery.SURGERY_CODE || surgery.id;
+    if (selectedSurgeries.find(s => (s.code || s.id) === code)) {
+      next = selectedSurgeries.filter(s => (s.code || s.id) !== code);
     } else {
-      next = [...selectedSurgeries, surgery];
+      // store normalized object
+      const entry = { id: code, code: code, name: surgery.name || surgery.SURGERY_DESC || '' };
+      next = [...selectedSurgeries, entry];
     }
     setSelectedSurgeries(next);
     saveSelections(next, noneChecked, notes);
@@ -75,7 +135,7 @@ const SurgicalHistory = () => {
   const handleAddNote = () => {
     if (notes.trim()) {
       const noteEntry = {
-        id: Date.now(),
+        id: `note-${Date.now()}`,
         code: 'S998',
         name: notes.trim()
       };
@@ -101,6 +161,7 @@ const SurgicalHistory = () => {
 
   const saveSelections = (selected, none, noteText) => {
     try {
+      // persist normalized payload to localStorage
       const payload = { selectedSurgeries: selected, noneChecked: none, notes: noteText };
       localStorage.setItem('surgicalHistorySelections', JSON.stringify(payload));
       // Dispatch a custom event so other components in the same window can react immediately
@@ -108,6 +169,19 @@ const SurgicalHistory = () => {
         const ev = new CustomEvent('surgicalHistoryUpdated', { detail: payload });
         window.dispatchEvent(ev);
       } catch (e) {}
+      // If we have a patientId, persist to backend as well (best-effort)
+      if (patientId) {
+        // backend expects an array of SurgicalHistoryItem
+        const serverItems = (selected || []).map(s => ({
+          SurgeryCode: s.code || s.id,
+          SurgeryName: s.name || s.SURGERY_DESC || s.SURGERY_DESC || '',
+          Notes: noteText || '',
+          IsChecked: true,
+        }));
+        surgicalService.savePatientSurgicalHistory(patientId, serverItems).catch((err) => {
+          console.error('Failed to save surgical history to server', err);
+        });
+      }
     } catch (e) {}
   };
 
@@ -140,11 +214,11 @@ const SurgicalHistory = () => {
             </div>
 
             {surgeries.map(surgery => (
-              <div key={surgery.id} className="checkbox-item-surgical">
+              <div key={surgery.id || surgery.code} className="checkbox-item-surgical">
                 <label>
                   <input
                     type="checkbox"
-                    checked={selectedSurgeries.some(s => s.id === surgery.id)}
+                    checked={selectedSurgeries.some(s => (s.code || s.id) === (surgery.code || surgery.SURGERY_CODE || surgery.id))}
                     onChange={() => handleCheckboxChange(surgery)}
                     disabled={noneChecked}
                   />

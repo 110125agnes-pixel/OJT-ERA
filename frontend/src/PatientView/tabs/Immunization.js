@@ -7,7 +7,13 @@ function Immunization({ patientId }) {
   const [youngLib, setYoungLib] = useState([]);
   const [pregLib, setPregLib] = useState([]);
   const [elderlyLib, setElderlyLib] = useState([]);
+  const [savedItems, setSavedItems] = useState([]);
 
+  // Map code and name with fallbacks
+  const mapCode = (item) => item.code || item.vaccine_code || item.IMM_CODE || item.imm_code || item.Code || item.code;
+  const mapName = (item) => item.name || item.vaccine_name || item.IMM_DESC || item.imm_desc || item.Desc || item.desc || '';
+
+  // Fetch all immunization libraries
   const fetchLibs = useCallback(async () => {
     try {
       const [cRes, yRes, pRes, eRes] = await Promise.all([
@@ -25,91 +31,99 @@ function Immunization({ patientId }) {
     }
   }, []);
 
+  // Fetch saved immunizations for the patient
+  const fetchSavedImmunization = useCallback(async () => {
+    try {
+      const res = await axios.get(`/api/patients/${patientId}/immunization`);
+      setSavedItems(res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch saved immunizations', err);
+    }
+  }, [patientId]);
+
   useEffect(() => {
     fetchLibs();
-  }, [fetchLibs]);
+    fetchSavedImmunization();
+  }, [fetchLibs, fetchSavedImmunization]);
 
-  const mapCode = (item) => item.code || item.vaccine_code || item.IMM_CODE || item.imm_code || item.Code || item.code;
-  const mapName = (item) => item.name || item.vaccine_name || item.IMM_DESC || item.imm_desc || item.Desc || item.desc || '';
+  // Check if item is selected
+  const isChecked = (item) => savedItems.some(s => mapCode(s) === mapCode(item));
+
+  // Handle checkbox toggle
+  const handleCheckboxChange = (lib, setLib, item) => {
+    // Update library state
+    const updatedLib = lib.map(v =>
+      mapCode(v) === mapCode(item)
+        ? { ...v, is_checked: !v.is_checked, category: item.category }
+        : v
+    );
+    setLib(updatedLib);
+
+    // Update savedItems state
+    setSavedItems(prev => {
+      const exists = prev.some(s => mapCode(s) === mapCode(item));
+      if (!exists) {
+        return [...prev, item];
+      } else {
+        return prev.filter(s => mapCode(s) !== mapCode(item));
+      }
+    });
+  };
+
+  // Render a library section
+  const renderSection = (title, lib, setLib) => (
+    <div className="immunization-section">
+      <h4>{title}</h4>
+      <div className="immunization-grid">
+        {lib.map(item => {
+          const code = mapCode(item);
+          const name = mapName(item);
+          return (
+            <label key={code}>
+              <input
+                type="checkbox"
+                checked={isChecked(item)}
+                onChange={() => handleCheckboxChange(lib, setLib, item)}
+              />
+              <span>{name}</span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
 
   return (
     <div className="immunization-content">
       <div className="immunization-sections">
         <div className="immunization-left">
-          {/* Children Section */}
-          <div className="immunization-section">
-            <h4>1. Children</h4>
-            <div className="immunization-grid">
-              {childLib.map((item) => {
-                const code = mapCode(item);
-                const name = mapName(item);
-                return (
-                  <label key={code}>
-                    <input type="checkbox" />
-                    <span>{name}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Young Section */}
-          <div className="immunization-section">
-            <h4>2. Young</h4>
-            <div className="immunization-grid">
-              {youngLib.map((item) => {
-                const code = mapCode(item);
-                const name = mapName(item);
-                return (
-                  <label key={code}>
-                    <input type="checkbox" />
-                    <span>{name}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Pregnant Section */}
-          <div className="immunization-section">
-            <h4>3. Pregnant</h4>
-            <div className="immunization-grid">
-              {pregLib.map((item) => {
-                const code = mapCode(item);
-                const name = mapName(item);
-                return (
-                  <label key={code}>
-                    <input type="checkbox" />
-                    <span>{name}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Elderly Section */}
-          <div className="immunization-section">
-            <h4>4. Elderly</h4>
-            <div className="immunization-grid">
-              {elderlyLib.map((item) => {
-                const code = mapCode(item);
-                const name = mapName(item);
-                return (
-                  <label key={code}>
-                    <input type="checkbox" />
-                    <span>{name}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
+          {renderSection('1. Children', childLib, setChildLib)}
+          {renderSection('2. Young', youngLib, setYoungLib)}
+          {renderSection('3. Pregnant', pregLib, setPregLib)}
+          {renderSection('4. Elderly', elderlyLib, setElderlyLib)}
         </div>
 
         <div className="immunization-right">
-          {/* Other Immunization Section */}
           <div className="immunization-section other-section">
             <h4>5. Other Immunization</h4>
-            <textarea placeholder="Other immunization notes" rows="10"></textarea>
+            <textarea
+              placeholder="Other immunization notes"
+              rows="10"
+              value={savedItems.find(s => s.other_notes)?.other_notes || ''}
+              onChange={(e) => {
+                const notes = e.target.value;
+                setSavedItems(prev => {
+                  const otherIndex = prev.findIndex(s => s.other_notes !== undefined);
+                  if (otherIndex > -1) {
+                    const updated = [...prev];
+                    updated[otherIndex].other_notes = notes;
+                    return updated;
+                  } else {
+                    return [...prev, { other_notes: notes }];
+                  }
+                });
+              }}
+            ></textarea>
           </div>
         </div>
       </div>

@@ -150,6 +150,9 @@ func main() {
 	// Ensure the patients table exists on startup
 	createPatientsTable()
 
+	// Ensure physical exam tables exist
+	createPhysicalExamTables()
+
 	// Setup router
 	router := mux.NewRouter()
 
@@ -175,18 +178,51 @@ func main() {
 	router.HandleFunc("/api/patients/{patientId}/medical-history", saveMedicalHistory).Methods("POST")
 	router.HandleFunc("/api/lib/mdiseases", getMedicalDiseases).Methods("GET")
 
+	// Physical Examination Routes (NEW)
+	router.HandleFunc("/api/patients/{patientId}/physical-exam/general", getPhysicalExamGeneral).Methods("GET")
+	router.HandleFunc("/api/patients/{patientId}/physical-exam/general", savePhysicalExamGeneral).Methods("POST")
+	router.HandleFunc("/api/patients/{patientId}/physical-exam/findings", getPhysicalExamFindings).Methods("GET")
+	router.HandleFunc("/api/patients/{patientId}/physical-exam/findings", savePhysicalExamFindings).Methods("POST")
+	// Surgical library
+	router.HandleFunc("/api/lib/surgery", getSurgicalLib).Methods("GET")
+	// Digital rectal library
+	router.HandleFunc("/api/lib/digital_rectal", getDigitalRectalLib).Methods("GET")
+	router.HandleFunc("/api/lib/digital_rectal", saveDigitalRectalLib).Methods("POST")
+	// Genitourinary library
+	router.HandleFunc("/api/lib/genitourinary", getGenitourinaryLib).Methods("GET")
+	router.HandleFunc("/api/lib/genitourinary", saveGenitourinaryLib).Methods("POST")
+
 	// Immunization library routes
 	router.HandleFunc("/api/lib/immchild", getImmChildLib).Methods("GET")
 	router.HandleFunc("/api/lib/immyoungw", getImmYoungLib).Methods("GET")
 	router.HandleFunc("/api/lib/immpregw", getImmPregLib).Methods("GET")
 	router.HandleFunc("/api/lib/immelderly", getImmElderlyLib).Methods("GET")
+	// Skin library
+	router.HandleFunc("/api/lib/skin", getSkinLib).Methods("GET")
+	// Chest library
+	router.HandleFunc("/api/lib/chest", getChestLib).Methods("GET")
+	router.HandleFunc("/api/lib/chest", saveChestLib).Methods("POST")
+	// Abdomen library
+	router.HandleFunc("/api/lib/abdomen", getAbdomenLib).Methods("GET")
+	router.HandleFunc("/api/lib/abdomen", saveAbdomenLib).Methods("POST")
+	// Heart library
+	router.HandleFunc("/api/lib/heart", getHeartLib).Methods("GET")
+	router.HandleFunc("/api/lib/heart", saveHeartLib).Methods("POST")
+	// Neuro library
+	router.HandleFunc("/api/lib/neuro", getNeuroLib).Methods("GET")
+	router.HandleFunc("/api/lib/neuro", saveNeuroLib).Methods("POST")
+	// HEENT library
+	router.HandleFunc("/api/lib/heent", getHeentLib).Methods("GET")
+	router.HandleFunc("/api/lib/heent", saveHeentLib).Methods("POST")
 	// Debug: dump all tables and rows from konsulta database
 	router.HandleFunc("/api/debug/dump", dumpDB).Methods("GET")
-
+	// Family Library
 	router.HandleFunc("/api/patients/{patientId}/family-history", getFamilyHistory).Methods("GET")
 	router.HandleFunc("/api/patients/{patientId}/family-history", saveFamilyHistory).Methods("POST")
+	// Surgery Library
 	router.HandleFunc("/api/patients/{patientId}/surgical-history", getSurgicalHistory).Methods("GET")
 	router.HandleFunc("/api/patients/{patientId}/surgical-history", saveSurgicalHistory).Methods("POST")
+	// Immunization Library
 	router.HandleFunc("/api/patients/{patientId}/immunization", getImmunization).Methods("GET")
 	router.HandleFunc("/api/patients/{patientId}/immunization", saveImmunization).Methods("POST")
 
@@ -476,6 +512,31 @@ func getMedicalDiseases(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(list)
 }
 
+// Library endpoint: digital rectal options
+func getDigitalRectalLib(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	rows, err := db.Query("SELECT RECTAL_ID, RECTAL_DESC FROM tsekap_lib_digital_rectal ORDER BY SORT_NO, RECTAL_ID")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type RectalItem struct {
+		ID   int    `json:"id"`
+		Desc string `json:"desc"`
+	}
+
+	list := []RectalItem{}
+	for rows.Next() {
+		var id int
+		var desc string
+		rows.Scan(&id, &desc)
+		list = append(list, RectalItem{ID: id, Desc: desc})
+	}
+	json.NewEncoder(w).Encode(list)
+}
+
 // dumpDB returns all tables and their rows as JSON (for local debugging only)
 func dumpDB(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -760,4 +821,693 @@ func createPatientsTable() {
 	if err != nil {
 		log.Printf("Warning: %v", err)
 	}
+}
+
+
+
+// Library endpoint: surgical options
+func getSurgicalLib(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	rows, err := db.Query("SELECT SURGERY_CODE, SURGERY_DESC FROM tsekap_lib_surgical ORDER BY SORT_NO, SURGERY_CODE")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type SurgItem struct {
+		SURGERY_CODE string `json:"SURGERY_CODE"`
+		SURGERY_DESC string `json:"SURGERY_DESC"`
+	}
+
+	list := []SurgItem{}
+	for rows.Next() {
+		var code, desc string
+		rows.Scan(&code, &desc)
+		list = append(list, SurgItem{SURGERY_CODE: code, SURGERY_DESC: desc})
+	}
+	json.NewEncoder(w).Encode(list)
+}
+
+func createPhysicalExamTables() {
+	// General info table (general survey, remarks, blood type)
+	generalQuery := `CREATE TABLE IF NOT EXISTS tsekap_tbl_prof_pe_general (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		patient_id INT NOT NULL UNIQUE,
+		general_survey VARCHAR(50) DEFAULT 'awake',
+		remarks TEXT,
+		blood_type VARCHAR(10) DEFAULT 'A+',
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		KEY (patient_id)
+	)`
+	if _, err := db.Exec(generalQuery); err != nil {
+		log.Printf("Warning createPhysicalExamTables (general): %v", err)
+	}
+
+	// Findings table (one row per checked finding per patient)
+	findingsQuery := `CREATE TABLE IF NOT EXISTS tsekap_tbl_prof_pe_findings (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		patient_id INT NOT NULL,
+		category VARCHAR(50) NOT NULL,
+		finding_code VARCHAR(100) NOT NULL,
+		finding_desc VARCHAR(255) NOT NULL,
+		is_checked BOOLEAN DEFAULT TRUE,
+		others_text TEXT,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		KEY (patient_id),
+		UNIQUE KEY unique_finding (patient_id, category, finding_code)
+	)`
+	if _, err := db.Exec(findingsQuery); err != nil {
+		log.Printf("Warning createPhysicalExamTables (findings): %v", err)
+	}
+
+	log.Println("✓ Physical exam tables ready")
+}
+
+// ==================== PHYSICAL EXAM HANDLERS ====================
+
+func getPhysicalExamGeneral(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	patientID := mux.Vars(r)["patientId"]
+
+	var g PhysicalExamGeneral
+	err := db.QueryRow(`SELECT id, patient_id, general_survey, remarks, blood_type 
+		FROM tsekap_tbl_prof_pe_general WHERE patient_id = ?`, patientID).Scan(
+		&g.ID, &g.PatientID, &g.GeneralSurvey, &g.Remarks, &g.BloodType)
+
+	if err == sql.ErrNoRows {
+		// Return defaults if nothing saved yet
+		json.NewEncoder(w).Encode(PhysicalExamGeneral{
+			GeneralSurvey: "awake",
+			BloodType:     "A+",
+		})
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(g)
+}
+
+func savePhysicalExamGeneral(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	patientID := mux.Vars(r)["patientId"]
+
+	var g PhysicalExamGeneral
+	if err := json.NewDecoder(r.Body).Decode(&g); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	_, err := db.Exec(`INSERT INTO tsekap_tbl_prof_pe_general 
+		(patient_id, general_survey, remarks, blood_type)
+		VALUES (?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE
+		general_survey = VALUES(general_survey),
+		remarks = VALUES(remarks),
+		blood_type = VALUES(blood_type)`,
+		patientID, g.GeneralSurvey, g.Remarks, g.BloodType)
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+}
+
+// FindingPayload for batch save
+type FindingPayload struct {
+	Category    string `json:"category"`
+	FindingCode string `json:"finding_code"`
+	FindingDesc string `json:"finding_desc"`
+	IsChecked   bool   `json:"is_checked"`
+	OthersText  string `json:"others_text"`
+}
+
+func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	patientID := mux.Vars(r)["patientId"]
+
+	rows, err := db.Query(`SELECT id, patient_id, category, finding_code, finding_desc, is_checked, others_text
+		FROM tsekap_tbl_prof_pe_findings WHERE patient_id = ?`, patientID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type FindingRow struct {
+		ID          int    `json:"id"`
+		PatientID   int    `json:"patient_id"`
+		Category    string `json:"category"`
+		FindingCode string `json:"finding_code"`
+		FindingDesc string `json:"finding_desc"`
+		IsChecked   bool   `json:"is_checked"`
+		OthersText  string `json:"others_text"`
+	}
+
+	list := []FindingRow{}
+	for rows.Next() {
+		var f FindingRow
+		rows.Scan(&f.ID, &f.PatientID, &f.Category, &f.FindingCode, &f.FindingDesc, &f.IsChecked, &f.OthersText)
+		list = append(list, f)
+	}
+	json.NewEncoder(w).Encode(list)
+}
+
+func savePhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	patientID := mux.Vars(r)["patientId"]
+
+	var payload struct {
+		Category string           `json:"category"`
+		Findings []FindingPayload `json:"findings"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		log.Println("Decode error:", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Use DELETE + INSERT for simplicity and reliability
+	_, err := db.Exec(`DELETE FROM tsekap_tbl_prof_pe_findings WHERE patient_id = ? AND category = ?`,
+		patientID, payload.Category)
+	if err != nil {
+		log.Println("Delete error:", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Only insert checked findings (or "others" with text)
+	for _, f := range payload.Findings {
+		if f.IsChecked {
+			_, err := db.Exec(`INSERT INTO tsekap_tbl_prof_pe_findings 
+				(patient_id, category, finding_code, finding_desc, is_checked, others_text)
+				VALUES (?, ?, ?, ?, ?, ?)`,
+				patientID, payload.Category, f.FindingCode, f.FindingDesc, true, f.OthersText)
+			if err != nil {
+				log.Println("Insert finding error:", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+	json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+}
+
+// PhysicalExamFinding - one row per checked finding
+type PhysicalExamFinding struct {
+	ID          int    `json:"id"`
+	PatientID   int    `json:"patient_id"`
+	Category    string `json:"category"`    // e.g. "skin", "heent", "chest"
+	FindingCode string `json:"finding_code"` // e.g. "essentiallyNormal"
+	FindingDesc string `json:"finding_desc"` // e.g. "Essentially normal"
+	IsChecked   bool   `json:"is_checked"`
+}
+
+// PhysicalExamGeneral - stores general survey, remarks, blood type
+type PhysicalExamGeneral struct {
+	ID            int    `json:"id"`
+	PatientID     int    `json:"patient_id"`
+	GeneralSurvey string `json:"general_survey"`
+	Remarks       string `json:"remarks"`
+	BloodType     string `json:"blood_type"`
+}
+
+// Library endpoint: skin/extremities options
+func getSkinLib(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	rows, err := db.Query("SELECT SKIN_ID, SKIN_DESC FROM tsekap_lib_skin_extremities ORDER BY SORT_NO, SKIN_ID")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type SkinItem struct {
+		ID   int    `json:"id"`
+		Desc string `json:"desc"`
+	}
+
+	list := []SkinItem{}
+	for rows.Next() {
+		var id int
+		var desc string
+		rows.Scan(&id, &desc)
+		list = append(list, SkinItem{ID: id, Desc: desc})
+	}
+	json.NewEncoder(w).Encode(list)
+}
+
+// Library endpoint: HEENT options
+func getHeentLib(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	rows, err := db.Query("SELECT HEENT_ID, HEENT_DESC FROM tsekap_lib_heent ORDER BY SORT_NO, HEENT_ID")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type HeentItem struct {
+		ID   int    `json:"id"`
+		Desc string `json:"desc"`
+	}
+
+	list := []HeentItem{}
+	for rows.Next() {
+		var id int
+		var desc string
+		rows.Scan(&id, &desc)
+		list = append(list, HeentItem{ID: id, Desc: desc})
+	}
+	json.NewEncoder(w).Encode(list)
+}
+
+// Save/Upsert HEENT library rows (accepts array of {id, desc, sort_no})
+func saveHeentLib(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var items []struct {
+		ID     int    `json:"id"`
+		Desc   string `json:"desc"`
+		SortNo int    `json:"sort_no"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&items); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	for _, it := range items {
+		if it.ID > 0 {
+			// try update
+			if _, err := tx.Exec(`UPDATE tsekap_lib_heent SET HEENT_DESC = ?, SORT_NO = ? WHERE HEENT_ID = ?`, it.Desc, it.SortNo, it.ID); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			if _, err := tx.Exec(`INSERT INTO tsekap_lib_heent (HEENT_DESC, SORT_NO) VALUES (?, ?)`, it.Desc, it.SortNo); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+}
+
+// Library endpoint: Chest options
+func getChestLib(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	rows, err := db.Query("SELECT CHEST_ID, CHEST_DESC FROM tsekap_lib_chest ORDER BY SORT_NO, CHEST_ID")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type ChestItem struct {
+		ID   int    `json:"id"`
+		Desc string `json:"desc"`
+	}
+
+	list := []ChestItem{}
+	for rows.Next() {
+		var id int
+		var desc string
+		rows.Scan(&id, &desc)
+		list = append(list, ChestItem{ID: id, Desc: desc})
+	}
+	json.NewEncoder(w).Encode(list)
+}
+
+// Save/Upsert Chest library rows (accepts array of {id, desc, sort_no})
+func saveChestLib(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var items []struct {
+		ID     int    `json:"id"`
+		Desc   string `json:"desc"`
+		SortNo int    `json:"sort_no"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&items); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	for _, it := range items {
+		if it.ID > 0 {
+			if _, err := tx.Exec(`UPDATE tsekap_lib_chest SET CHEST_DESC = ?, SORT_NO = ? WHERE CHEST_ID = ?`, it.Desc, it.SortNo, it.ID); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			if _, err := tx.Exec(`INSERT INTO tsekap_lib_chest (CHEST_DESC, SORT_NO) VALUES (?, ?)`, it.Desc, it.SortNo); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+}
+
+// Library endpoint: Heart options
+func getHeartLib(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	rows, err := db.Query("SELECT HEART_ID, HEART_DESC FROM tsekap_lib_heart ORDER BY SORT_NO, HEART_ID")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type HeartItem struct {
+		ID   int    `json:"id"`
+		Desc string `json:"desc"`
+	}
+
+	list := []HeartItem{}
+	for rows.Next() {
+		var id int
+		var desc string
+		rows.Scan(&id, &desc)
+		list = append(list, HeartItem{ID: id, Desc: desc})
+	}
+	json.NewEncoder(w).Encode(list)
+}
+
+// Save/Upsert Heart library rows (accepts array of {id, desc, sort_no})
+func saveHeartLib(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var items []struct {
+		ID     int    `json:"id"`
+		Desc   string `json:"desc"`
+		SortNo int    `json:"sort_no"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&items); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	for _, it := range items {
+		if it.ID > 0 {
+			if _, err := tx.Exec(`UPDATE tsekap_lib_heart SET HEART_DESC = ?, SORT_NO = ? WHERE HEART_ID = ?`, it.Desc, it.SortNo, it.ID); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			if _, err := tx.Exec(`INSERT INTO tsekap_lib_heart (HEART_DESC, SORT_NO) VALUES (?, ?)`, it.Desc, it.SortNo); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+}
+
+// Library endpoint: Abdomen options
+func getAbdomenLib(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	rows, err := db.Query("SELECT ABDOMEN_ID, ABDOMEN_DESC FROM tsekap_lib_abdomen ORDER BY SORT_NO, ABDOMEN_ID")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type AbdomenItem struct {
+		ID   int    `json:"id"`
+		Desc string `json:"desc"`
+	}
+
+	list := []AbdomenItem{}
+	for rows.Next() {
+		var id int
+		var desc string
+		rows.Scan(&id, &desc)
+		list = append(list, AbdomenItem{ID: id, Desc: desc})
+	}
+	json.NewEncoder(w).Encode(list)
+}
+
+// Save/Upsert Abdomen library rows (accepts array of {id, desc, sort_no})
+func saveAbdomenLib(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var items []struct {
+		ID     int    `json:"id"`
+		Desc   string `json:"desc"`
+		SortNo int    `json:"sort_no"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&items); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	for _, it := range items {
+		if it.ID > 0 {
+			if _, err := tx.Exec(`UPDATE tsekap_lib_abdomen SET ABDOMEN_DESC = ?, SORT_NO = ? WHERE ABDOMEN_ID = ?`, it.Desc, it.SortNo, it.ID); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			if _, err := tx.Exec(`INSERT INTO tsekap_lib_abdomen (ABDOMEN_DESC, SORT_NO) VALUES (?, ?)`, it.Desc, it.SortNo); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+}
+
+// Library endpoint: Neuro options
+func getNeuroLib(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	rows, err := db.Query("SELECT NEURO_ID, NEURO_DESC FROM tsekap_lib_neuro ORDER BY SORT_NO, NEURO_ID")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type NeuroItem struct {
+		ID   int    `json:"id"`
+		Desc string `json:"desc"`
+	}
+
+	list := []NeuroItem{}
+	for rows.Next() {
+		var id int
+		var desc string
+		rows.Scan(&id, &desc)
+		list = append(list, NeuroItem{ID: id, Desc: desc})
+	}
+	json.NewEncoder(w).Encode(list)
+}
+
+// Save/Upsert Neuro library rows (accepts array of {id, desc, sort_no})
+func saveNeuroLib(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var items []struct {
+		ID     int    `json:"id"`
+		Desc   string `json:"desc"`
+		SortNo int    `json:"sort_no"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&items); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	for _, it := range items {
+		if it.ID > 0 {
+			if _, err := tx.Exec(`UPDATE tsekap_lib_neuro SET NEURO_DESC = ?, SORT_NO = ? WHERE NEURO_ID = ?`, it.Desc, it.SortNo, it.ID); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			if _, err := tx.Exec(`INSERT INTO tsekap_lib_neuro (NEURO_DESC, SORT_NO) VALUES (?, ?)`, it.Desc, it.SortNo); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+}
+
+// Library endpoint: Genitourinary options
+func getGenitourinaryLib(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	rows, err := db.Query("SELECT GU_ID, GU_DESC FROM tsekap_lib_genitourinary ORDER BY SORT_NO, GU_ID")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type GUItem struct {
+		ID   int    `json:"id"`
+		Desc string `json:"desc"`
+	}
+
+	list := []GUItem{}
+	for rows.Next() {
+		var id int
+		var desc string
+		rows.Scan(&id, &desc)
+		list = append(list, GUItem{ID: id, Desc: desc})
+	}
+	json.NewEncoder(w).Encode(list)
+}
+
+// Save/Upsert Genitourinary library rows (accepts array of {id, desc, sort_no})
+func saveGenitourinaryLib(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var items []struct {
+		ID     int    `json:"id"`
+		Desc   string `json:"desc"`
+		SortNo int    `json:"sort_no"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&items); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	for _, it := range items {
+		if it.ID > 0 {
+			if _, err := tx.Exec(`UPDATE tsekap_lib_genitourinary SET GU_DESC = ?, SORT_NO = ? WHERE GU_ID = ?`, it.Desc, it.SortNo, it.ID); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			if _, err := tx.Exec(`INSERT INTO tsekap_lib_genitourinary (GU_DESC, SORT_NO) VALUES (?, ?)`, it.Desc, it.SortNo); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+}
+
+// Save/Upsert Digital Rectal library rows (accepts array of {id, desc, sort_no})
+func saveDigitalRectalLib(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var items []struct {
+		ID     int    `json:"id"`
+		Desc   string `json:"desc"`
+		SortNo int    `json:"sort_no"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&items); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	for _, it := range items {
+		if it.ID > 0 {
+			if _, err := tx.Exec(`UPDATE tsekap_lib_digital_rectal SET RECTAL_DESC = ?, SORT_NO = ? WHERE RECTAL_ID = ?`, it.Desc, it.SortNo, it.ID); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			if _, err := tx.Exec(`INSERT INTO tsekap_lib_digital_rectal (RECTAL_DESC, SORT_NO) VALUES (?, ?)`, it.Desc, it.SortNo); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
 }

@@ -199,7 +199,7 @@ function PatientView() {
               "Immunization",
               "Social History",
               "Female",
-              "Patient History",
+              
               "*Pertinent Physical Examinations",
               "*Physical Examination",
               "NCDQANS",
@@ -224,32 +224,35 @@ function PatientView() {
             {activeSubTab === "Medical" && <MedicalHistory patientId={id} />}
 
             {/* Renders PertinentPhysicalExamination.js */}
-            {activeSubTab === "*Pertinent Physical Examinations" && <PertinentPhysicalExamination />}
+            {activeSubTab === "*Pertinent Physical Examinations" && (
+              <PertinentPhysicalExamination patientId={id} />
+            )}
 
             {/* Renders PhysicalExamination.js */}
             {activeSubTab === "*Physical Examination" && (
-              <PhysicalExamination />
+              <PhysicalExamination patientId={id} />
             )}
 
             {/* Renders FamilyHistory.js */}
-            {activeSubTab === "Family" && <FamilyHistory />}
+            {activeSubTab === "Family" && <FamilyHistory patientId={id} />}
 
-            {/* Renders DiseaseSummary.js (labelled Patient History) */}
-            {activeSubTab === "Patient History" && <DiseaseSummary />}
+            {activeSubTab === "Patient History" && (
+              <DiseaseSummary patientId={id} />
+            )}
 
             
 
             {/* Renders Surgical.js */}
-            {activeSubTab === "Surgery" && <Surgical />}
+            {activeSubTab === "Surgery" && <Surgical patientId={id} />}
 
             {/* Renders Immunization.js */}
-            {activeSubTab === "Immunization" && <Immunization />}
+            {activeSubTab === "Immunization" && <Immunization patientId={id} />}
 
             {/* Renders FemaleHistory.js */}
-            {activeSubTab === "Female" && <FemaleHistory />}
+            {activeSubTab === "Female" && <FemaleHistory patientId={id} />}
 
             {/* Renders SocialHistory.js */}
-            {activeSubTab === "Social History" && <SocialHistory />}
+            {activeSubTab === "Social History" && <SocialHistory patientId={id} />}
           </>
         )}
 

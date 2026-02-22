@@ -38,6 +38,27 @@ function EmployeeProfiling() {
   const onlyDigits = (val) => (val || '').toString().replace(/\D+/g, '');
   const onlyLetters = (val) => (val || '').toString().replace(/[^a-zA-Z\s]+/g, '');
 
+  // Generate a random alphanumeric string (uppercase)
+  const generateRandomCaseNo = (len = 8) => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let out = '';
+    for (let i = 0; i < len; i++) out += chars.charAt(Math.floor(Math.random() * chars.length));
+    return out;
+  };
+
+  // Generate a unique caseNo not present in the provided list
+  const generateUniqueCaseNo = (list, len = 8) => {
+    const existing = new Set((list || []).map((e) => (e.caseNo || '').toString().trim()).filter(Boolean));
+    let attempt = 0;
+    while (attempt < 1000) {
+      const candidate = generateRandomCaseNo(len);
+      if (!existing.has(candidate)) return candidate;
+      attempt += 1;
+    }
+    // fallback to timestamp-based unique value
+    return `CN${Date.now()}`;
+  };
+
   // Date helpers: format values for backend MySQL fields
   // - `toSQLDate` converts a date-like string to `YYYY-MM-DD` which
   //   matches MySQL `DATE` column expectations.
@@ -76,6 +97,8 @@ function EmployeeProfiling() {
       setLoading(true);
       const data = await itemService.getAllItems();
       setEmployees(data || []);
+      // set a generated unique caseNo for the form
+      setNewEmployee((prev) => ({ ...prev, caseNo: generateUniqueCaseNo(data || []) }));
       setError('');
     } catch (err) {
       setError('Failed to fetch employees: ' + (err.response?.data?.error || err.message));
@@ -100,14 +123,14 @@ function EmployeeProfiling() {
         ...newEmployee,
         // MySQL DATE
         birthdate: toSQLDate(newEmployee.birthdate),
-        // MySQL DATETIME
-        admissionDate: toSQLDateTime(newEmployee.admissionDate),
-        dischargeDate: toSQLDateTime(newEmployee.dischargeDate),
+        // MySQL DATETIME (send null if empty)
+        admissionDate: newEmployee.admissionDate ? toSQLDateTime(newEmployee.admissionDate) : null,
+        dischargeDate: newEmployee.dischargeDate ? toSQLDateTime(newEmployee.dischargeDate) : null,
       };
       const data = await itemService.createItem(payload);
-      setEmployees([...employees, data]);
+      const updated = [...employees, data];
+      setEmployees(updated);
       setNewEmployee({
-        caseNo: '',
         hospitalNo: '',
         lastname: '',
         firstname: '',
@@ -124,6 +147,8 @@ function EmployeeProfiling() {
         complaint: ''
       });
       setError('');
+      // set next generated caseNo for the next entry
+      setNewEmployee((prev) => ({ ...prev, caseNo: generateUniqueCaseNo(updated) }));
     } catch (err) {
       setError('Failed to add employee: ' + (err.response?.data?.error || err.message));
       console.error('Error adding employee:', err);
@@ -139,7 +164,10 @@ function EmployeeProfiling() {
     try {
       setLoading(true);
       await itemService.deleteItem(id);
-      setEmployees(employees.filter(emp => emp.id !== id));
+      const remaining = employees.filter(emp => emp.id !== id);
+      setEmployees(remaining);
+      // regenerate caseNo after deletion to avoid collisions
+      setNewEmployee((prev) => ({ ...prev, caseNo: generateUniqueCaseNo(remaining) }));
       setError('');
     } catch (err) {
       setError('Failed to delete employee: ' + err.message);
@@ -211,7 +239,7 @@ function EmployeeProfiling() {
               name="caseNo"
               type="text"
               value={newEmployee.caseNo}
-              onChange={(e) => setNewEmployee({...newEmployee, caseNo: onlyDigits(e.target.value)})}
+              readOnly
               required
             />
           </div>
