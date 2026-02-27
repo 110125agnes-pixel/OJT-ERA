@@ -43,6 +43,9 @@ cd backend
 
 # Install dependencies
 go mod download
+go get github.com/gorilla/mux
+go get github.com/go-sql-driver/mysql
+go get github.com/rs/cors
 
 # Create .env file (optional)
 # copy .env.example .env
@@ -60,9 +63,7 @@ The backend will start on http://localhost:8080 and create `app.db` in the backe
 cd frontend
 
 # Install dependencies
-go get github.com/gorilla/mux
-go get github.com/go-sql-driver/mysql
-go get github.com/rs/cors
+
 npm install axios
 npm install
 
