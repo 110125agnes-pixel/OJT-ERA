@@ -1,28 +1,31 @@
-import React, { useState } from 'react';
-import './Dashboard.css';
-import EmployeeProfiling from './EmployeeProfiling';
-import DiseaseSummary from './PatientView/tabs/DiseaseSummary';
+import React, { useState } from "react";
+import "./Dashboard.css";
+import EmployeeProfiling from "./EmployeeProfiling";
+import DiseaseSummary from "./PatientView/tabs/DiseaseSummary";
 
 function Dashboard({ onLogout }) {
-  const [activeModule, setActiveModule] = useState('home');
+  const [activeModule, setActiveModule] = useState("home");
 
   const renderContent = () => {
     switch (activeModule) {
-      case 'inventory':
+      case "inventory":
         return null;
-      case 'profiling':
+      case "profiling":
         return <EmployeeProfiling />;
-      case 'patientHistory':
+      case "patientHistory":
         return <DiseaseSummary />;
-      
-      case 'home':
+
+      case "home":
       default:
         return (
           <div className="dashboard-home">
             <h2>Welcome to Patient Management Portal</h2>
             <div className="dashboard-cards">
               {/* Inventory card removed */}
-              <div className="dashboard-card" onClick={() => setActiveModule('profiling')}>
+              <div
+                className="dashboard-card"
+                onClick={() => setActiveModule("profiling")}
+              >
                 <div className="card-icon">👥</div>
                 <h3>Patient Management</h3>
                 <p>View and manage patient information</p>
@@ -40,22 +43,26 @@ function Dashboard({ onLogout }) {
           <h1>Patient Portal</h1>
         </div>
         <div className="nav-menu">
-          <button 
-            className={activeModule === 'home' ? 'nav-item active' : 'nav-item'}
-            onClick={() => setActiveModule('home')}
+          <button
+            className={activeModule === "home" ? "nav-item active" : "nav-item"}
+            onClick={() => setActiveModule("home")}
           >
             🏠 Home
           </button>
           {/* Inventory nav removed */}
-          <button 
-            className={activeModule === 'profiling' ? 'nav-item active' : 'nav-item'}
-            onClick={() => setActiveModule('profiling')}
+          <button
+            className={
+              activeModule === "profiling" ? "nav-item active" : "nav-item"
+            }
+            onClick={() => setActiveModule("profiling")}
           >
             👥 Patients
           </button>
           <button
-            className={activeModule === 'patientHistory' ? 'nav-item active' : 'nav-item'}
-            onClick={() => setActiveModule('patientHistory')}
+            className={
+              activeModule === "patientHistory" ? "nav-item active" : "nav-item"
+            }
+            onClick={() => setActiveModule("patientHistory")}
           >
             🩺 Patient History
           </button>
@@ -64,9 +71,7 @@ function Dashboard({ onLogout }) {
           Logout
         </button>
       </nav>
-      <main className="dashboard-content">
-        {renderContent()}
-      </main>
+      <main className="dashboard-content">{renderContent()}</main>
     </div>
   );
 }

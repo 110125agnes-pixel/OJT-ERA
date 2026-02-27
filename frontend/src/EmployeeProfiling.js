@@ -1,54 +1,60 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import './EmployeeProfiling.css';
-import { itemService } from './services/api';
-import ItemForm from './components/ItemForm';
-import ItemEditForm from './components/ItemEditForm';
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import "./EmployeeProfiling.css";
+import { itemService } from "./services/api";
+import ItemForm from "./components/ItemForm";
+import ItemEditForm from "./components/ItemEditForm";
 
 function EmployeeProfiling() {
   const navigate = useNavigate();
   const [employees, setEmployees] = useState([]);
   const [newEmployee, setNewEmployee] = useState({
-    caseNo: '',
-    hospitalNo: '',
-    lastname: '',
-    firstname: '',
-    middlename: '',
-    suffix: '',
-    birthdate: '',
-    age: '',
-    room: '',
-    admissionDate: '',
-    dischargeDate: '',
-    sex: '',
-    height: '',
-    weight: '',
-    complaint: ''
+    caseNo: "",
+    hospitalNo: "",
+    lastname: "",
+    firstname: "",
+    middlename: "",
+    suffix: "",
+    birthdate: "",
+    age: "",
+    room: "",
+    admissionDate: "",
+    dischargeDate: "",
+    sex: "",
+    height: "",
+    weight: "",
+    complaint: "",
   });
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [error, setError] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
   const [editItem, setEditItem] = useState(null);
   const [editLoading, setEditLoading] = useState(false);
 
-  const sexOptions = ['', 'Male', 'Female', 'Other'];
-  const civilStatusOptions = ['', 'Single', 'Married', 'Divorced', 'Widowed'];
+  const sexOptions = ["", "Male", "Female", "Other"];
+  const civilStatusOptions = ["", "Single", "Married", "Divorced", "Widowed"];
 
   // Input sanitizers
-  const onlyDigits = (val) => (val || '').toString().replace(/\D+/g, '');
-  const onlyLetters = (val) => (val || '').toString().replace(/[^a-zA-Z\s]+/g, '');
+  const onlyDigits = (val) => (val || "").toString().replace(/\D+/g, "");
+  const onlyLetters = (val) =>
+    (val || "").toString().replace(/[^a-zA-Z\s]+/g, "");
 
   // Generate a random alphanumeric string (uppercase)
   const generateRandomCaseNo = (len = 8) => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let out = '';
-    for (let i = 0; i < len; i++) out += chars.charAt(Math.floor(Math.random() * chars.length));
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let out = "";
+    for (let i = 0; i < len; i++)
+      out += chars.charAt(Math.floor(Math.random() * chars.length));
     return out;
   };
 
   // Generate a unique caseNo not present in the provided list
   const generateUniqueCaseNo = (list, len = 8) => {
-    const existing = new Set((list || []).map((e) => (e.caseNo || '').toString().trim()).filter(Boolean));
+    const existing = new Set(
+      (list || [])
+        .map((e) => (e.caseNo || "").toString().trim())
+        .filter(Boolean),
+    );
     let attempt = 0;
     while (attempt < 1000) {
       const candidate = generateRandomCaseNo(len);
@@ -66,25 +72,25 @@ function EmployeeProfiling() {
   //   MySQL `DATETIME` columns. These helpers prevent invalid/ambiguous
   //   date formats being sent from the browser (which can trigger 500s).
   const toSQLDate = (dateStr) => {
-    if (!dateStr) return '';
+    if (!dateStr) return "";
     const d = new Date(dateStr);
     if (isNaN(d)) return dateStr;
     const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
     return `${yyyy}-${mm}-${dd}`;
   };
 
   const toSQLDateTime = (dateStr) => {
-    if (!dateStr) return '';
+    if (!dateStr) return "";
     const d = new Date(dateStr);
     if (isNaN(d)) return dateStr;
     const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    const hh = String(d.getHours()).padStart(2, '0');
-    const min = String(d.getMinutes()).padStart(2, '0');
-    const ss = String(d.getSeconds()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const min = String(d.getMinutes()).padStart(2, "0");
+    const ss = String(d.getSeconds()).padStart(2, "0");
     return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
   };
 
@@ -96,13 +102,26 @@ function EmployeeProfiling() {
     try {
       setLoading(true);
       const data = await itemService.getAllItems();
-      setEmployees(data || []);
-      // set a generated unique caseNo for the form
-      setNewEmployee((prev) => ({ ...prev, caseNo: generateUniqueCaseNo(data || []) }));
-      setError('');
+      // Filter out rows that are clearly not patient records (e.g. library rows)
+      // Heuristic: require at least a firstname or lastname to be present.
+      const filtered = (data || []).filter((d) => {
+        const ln = (d.lastname || "").toString().trim();
+        const fn = (d.firstname || "").toString().trim();
+        return ln.length > 0 || fn.length > 0;
+      });
+      setEmployees(filtered);
+      // set a generated unique caseNo for the form using the filtered list
+      setNewEmployee((prev) => ({
+        ...prev,
+        caseNo: generateUniqueCaseNo(filtered),
+      }));
+      setError("");
     } catch (err) {
-      setError('Failed to fetch employees: ' + (err.response?.data?.error || err.message));
-      console.error('Error fetching employees:', err);
+      setError(
+        "Failed to fetch employees: " +
+          (err.response?.data?.error || err.message),
+      );
+      console.error("Error fetching employees:", err);
     } finally {
       setLoading(false);
     }
@@ -111,7 +130,7 @@ function EmployeeProfiling() {
   const addEmployee = async (e) => {
     e.preventDefault();
     if (!newEmployee.lastname.trim() || !newEmployee.firstname.trim()) {
-      setError('Lastname and Firstname are required');
+      setError("Lastname and Firstname are required");
       return;
     }
     try {
@@ -124,61 +143,75 @@ function EmployeeProfiling() {
         // MySQL DATE
         birthdate: toSQLDate(newEmployee.birthdate),
         // MySQL DATETIME (send null if empty)
-        admissionDate: newEmployee.admissionDate ? toSQLDateTime(newEmployee.admissionDate) : null,
-        dischargeDate: newEmployee.dischargeDate ? toSQLDateTime(newEmployee.dischargeDate) : null,
+        admissionDate: newEmployee.admissionDate
+          ? toSQLDateTime(newEmployee.admissionDate)
+          : null,
+        dischargeDate: newEmployee.dischargeDate
+          ? toSQLDateTime(newEmployee.dischargeDate)
+          : null,
       };
       const data = await itemService.createItem(payload);
       const updated = [...employees, data];
       setEmployees(updated);
       setNewEmployee({
-        hospitalNo: '',
-        lastname: '',
-        firstname: '',
-        middlename: '',
-        suffix: '',
-        birthdate: '',
-        age: '',
-        room: '',
-        admissionDate: '',
-        dischargeDate: '',
-        sex: '',
-        height: '',
-        weight: '',
-        complaint: ''
+        hospitalNo: "",
+        lastname: "",
+        firstname: "",
+        middlename: "",
+        suffix: "",
+        birthdate: "",
+        age: "",
+        room: "",
+        admissionDate: "",
+        dischargeDate: "",
+        sex: "",
+        height: "",
+        weight: "",
+        complaint: "",
       });
-      setError('');
+      setError("");
       // set next generated caseNo for the next entry
-      setNewEmployee((prev) => ({ ...prev, caseNo: generateUniqueCaseNo(updated) }));
+      setNewEmployee((prev) => ({
+        ...prev,
+        caseNo: generateUniqueCaseNo(updated),
+      }));
     } catch (err) {
-      setError('Failed to add employee: ' + (err.response?.data?.error || err.message));
-      console.error('Error adding employee:', err);
+      setError(
+        "Failed to add employee: " + (err.response?.data?.error || err.message),
+      );
+      console.error("Error adding employee:", err);
     } finally {
       setLoading(false);
     }
   };
 
   const deleteEmployee = async (id) => {
-    const confirmDelete = window.confirm('Are you sure you want to delete this employee?');
+    const confirmDelete = window.confirm(
+      "Are you sure you want to delete this employee?",
+    );
     if (!confirmDelete) return;
 
     try {
       setLoading(true);
       await itemService.deleteItem(id);
-      const remaining = employees.filter(emp => emp.id !== id);
+      const remaining = employees.filter((emp) => emp.id !== id);
       setEmployees(remaining);
       // regenerate caseNo after deletion to avoid collisions
-      setNewEmployee((prev) => ({ ...prev, caseNo: generateUniqueCaseNo(remaining) }));
-      setError('');
+      setNewEmployee((prev) => ({
+        ...prev,
+        caseNo: generateUniqueCaseNo(remaining),
+      }));
+      setError("");
     } catch (err) {
-      setError('Failed to delete employee: ' + err.message);
-      console.error('Error deleting employee:', err);
+      setError("Failed to delete employee: " + err.message);
+      console.error("Error deleting employee:", err);
     } finally {
       setLoading(false);
     }
   };
 
   const openEdit = (emp) => {
-    setEditItem({...emp});
+    setEditItem({ ...emp });
   };
 
   const handleEditChange = (updated) => {
@@ -199,12 +232,15 @@ function EmployeeProfiling() {
         dischargeDate: toSQLDateTime(editItem.dischargeDate),
       };
       const updated = await itemService.updateItem(editItem.id, payload);
-      setEmployees(employees.map(e => e.id === updated.id ? updated : e));
+      setEmployees(employees.map((e) => (e.id === updated.id ? updated : e)));
       setEditItem(null);
-      setError('');
+      setError("");
     } catch (err) {
-      setError('Failed to update employee: ' + (err.response?.data?.error || err.message));
-      console.error('Error updating employee:', err);
+      setError(
+        "Failed to update employee: " +
+          (err.response?.data?.error || err.message),
+      );
+      console.error("Error updating employee:", err);
     } finally {
       setEditLoading(false);
     }
@@ -218,18 +254,19 @@ function EmployeeProfiling() {
     navigate(`/patient/${patient.id}`);
   };
 
-  const filteredEmployees = employees.filter(emp =>
-    emp.firstname?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.lastname?.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredEmployees = employees.filter(
+    (emp) =>
+      emp.firstname?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      emp.lastname?.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   return (
     <div className="profiling-container">
       <h2>👥 Patient Management</h2>
       <p className="subtitle">Create and manage patient profiles</p>
-      
+
       {error && <div className="error">{error}</div>}
-      
+
       <form onSubmit={addEmployee} className="add-form">
         <h3>Add New Patient</h3>
         <div className="form-grid">
@@ -249,7 +286,12 @@ function EmployeeProfiling() {
               name="hospitalNo"
               type="text"
               value={newEmployee.hospitalNo}
-              onChange={(e) => setNewEmployee({...newEmployee, hospitalNo: onlyDigits(e.target.value)})}
+              onChange={(e) =>
+                setNewEmployee({
+                  ...newEmployee,
+                  hospitalNo: onlyDigits(e.target.value),
+                })
+              }
             />
           </div>
           <div className="form-field">
@@ -258,7 +300,12 @@ function EmployeeProfiling() {
               name="lastname"
               type="text"
               value={newEmployee.lastname}
-              onChange={(e) => setNewEmployee({...newEmployee, lastname: onlyLetters(e.target.value)})}
+              onChange={(e) =>
+                setNewEmployee({
+                  ...newEmployee,
+                  lastname: onlyLetters(e.target.value),
+                })
+              }
               required
             />
           </div>
@@ -268,18 +315,28 @@ function EmployeeProfiling() {
               name="firstname"
               type="text"
               value={newEmployee.firstname}
-              onChange={(e) => setNewEmployee({...newEmployee, firstname: onlyLetters(e.target.value)})}
+              onChange={(e) =>
+                setNewEmployee({
+                  ...newEmployee,
+                  firstname: onlyLetters(e.target.value),
+                })
+              }
               required
             />
           </div>
-          
+
           <div className="form-field">
             <label>Middle Name</label>
             <input
               name="middlename"
               type="text"
               value={newEmployee.middlename}
-              onChange={(e) => setNewEmployee({...newEmployee, middlename: onlyLetters(e.target.value)})}
+              onChange={(e) =>
+                setNewEmployee({
+                  ...newEmployee,
+                  middlename: onlyLetters(e.target.value),
+                })
+              }
             />
           </div>
           <div className="form-field">
@@ -288,7 +345,12 @@ function EmployeeProfiling() {
               name="suffix"
               type="text"
               value={newEmployee.suffix}
-              onChange={(e) => setNewEmployee({...newEmployee, suffix: onlyLetters(e.target.value)})}
+              onChange={(e) =>
+                setNewEmployee({
+                  ...newEmployee,
+                  suffix: onlyLetters(e.target.value),
+                })
+              }
             />
           </div>
           <div className="form-field">
@@ -297,7 +359,9 @@ function EmployeeProfiling() {
               name="birthdate"
               type="date"
               value={newEmployee.birthdate}
-              onChange={(e) => setNewEmployee({...newEmployee, birthdate: e.target.value})}
+              onChange={(e) =>
+                setNewEmployee({ ...newEmployee, birthdate: e.target.value })
+              }
               required
             />
           </div>
@@ -307,17 +371,27 @@ function EmployeeProfiling() {
               name="age"
               type="text"
               value={newEmployee.age}
-              onChange={(e) => setNewEmployee({...newEmployee, age: onlyDigits(e.target.value)})}
+              onChange={(e) =>
+                setNewEmployee({
+                  ...newEmployee,
+                  age: onlyDigits(e.target.value),
+                })
+              }
             />
           </div>
-          
+
           <div className="form-field">
             <label>Room</label>
             <input
               name="room"
               type="text"
               value={newEmployee.room}
-              onChange={(e) => setNewEmployee({...newEmployee, room: onlyDigits(e.target.value)})}
+              onChange={(e) =>
+                setNewEmployee({
+                  ...newEmployee,
+                  room: onlyDigits(e.target.value),
+                })
+              }
             />
           </div>
           <div className="form-field">
@@ -326,7 +400,12 @@ function EmployeeProfiling() {
               name="admissionDate"
               type="datetime-local"
               value={newEmployee.admissionDate}
-              onChange={(e) => setNewEmployee({...newEmployee, admissionDate: e.target.value})}
+              onChange={(e) =>
+                setNewEmployee({
+                  ...newEmployee,
+                  admissionDate: e.target.value,
+                })
+              }
             />
           </div>
           <div className="form-field">
@@ -335,7 +414,12 @@ function EmployeeProfiling() {
               name="dischargeDate"
               type="datetime-local"
               value={newEmployee.dischargeDate}
-              onChange={(e) => setNewEmployee({...newEmployee, dischargeDate: e.target.value})}
+              onChange={(e) =>
+                setNewEmployee({
+                  ...newEmployee,
+                  dischargeDate: e.target.value,
+                })
+              }
             />
           </div>
           <div className="form-field">
@@ -343,21 +427,28 @@ function EmployeeProfiling() {
             <select
               name="sex"
               value={newEmployee.sex}
-              onChange={(e) => setNewEmployee({...newEmployee, sex: e.target.value})}
+              onChange={(e) =>
+                setNewEmployee({ ...newEmployee, sex: e.target.value })
+              }
             >
               <option value="">Select Sex</option>
               <option value="Male">Male</option>
               <option value="Female">Female</option>
             </select>
           </div>
-          
+
           <div className="form-field">
             <label>Height (cm)</label>
             <input
               name="height"
               type="text"
               value={newEmployee.height}
-              onChange={(e) => setNewEmployee({...newEmployee, height: onlyDigits(e.target.value)})}
+              onChange={(e) =>
+                setNewEmployee({
+                  ...newEmployee,
+                  height: onlyDigits(e.target.value),
+                })
+              }
             />
           </div>
           <div className="form-field">
@@ -366,7 +457,12 @@ function EmployeeProfiling() {
               name="weight"
               type="text"
               value={newEmployee.weight}
-              onChange={(e) => setNewEmployee({...newEmployee, weight: onlyDigits(e.target.value)})}
+              onChange={(e) =>
+                setNewEmployee({
+                  ...newEmployee,
+                  weight: onlyDigits(e.target.value),
+                })
+              }
             />
           </div>
           <div className="form-field">
@@ -375,13 +471,18 @@ function EmployeeProfiling() {
               name="complaint"
               type="text"
               value={newEmployee.complaint}
-              onChange={(e) => setNewEmployee({...newEmployee, complaint: onlyLetters(e.target.value)})}
+              onChange={(e) =>
+                setNewEmployee({
+                  ...newEmployee,
+                  complaint: onlyLetters(e.target.value),
+                })
+              }
             />
           </div>
           <div className="form-field">
             <label>&nbsp;</label>
             <button type="submit" disabled={loading} className="submit-btn">
-              {loading ? 'Adding...' : 'Add Patient'}
+              {loading ? "Adding..." : "Add Patient"}
             </button>
           </div>
         </div>
@@ -402,7 +503,9 @@ function EmployeeProfiling() {
           <div className="modal-content">
             <div className="modal-header">
               <h3>Edit Patient</h3>
-              <button className="close-btn" onClick={cancelEdit}>&times;</button>
+              <button className="close-btn" onClick={cancelEdit}>
+                &times;
+              </button>
             </div>
             <div className="patient-details">
               <ItemEditForm
@@ -435,17 +538,35 @@ function EmployeeProfiling() {
               </tr>
             </thead>
             <tbody>
-              {filteredEmployees.map(emp => (
+              {filteredEmployees.map((emp) => (
                 <tr key={emp.id}>
                   <td>{emp.caseNo}</td>
-                  <td>{`${emp.lastname}, ${emp.firstname} ${emp.middlename || ''} ${emp.suffix || ''}`.trim()}</td>
+                  <td>
+                    {`${emp.lastname}, ${emp.firstname} ${emp.middlename || ""} ${emp.suffix || ""}`.trim()}
+                  </td>
                   <td>{emp.birthdate}</td>
                   <td>{emp.room}</td>
-                  <td>{emp.admissionDate ? new Date(emp.admissionDate).toLocaleString() : ''}</td>
                   <td>
-                    <button onClick={() => openEdit(emp)} className="edit-btn">Edit</button>
-                    <button onClick={() => viewPatient(emp)} className="view-btn">View</button>
-                    <button onClick={() => deleteEmployee(emp.id)} className="delete-btn">Delete</button>
+                    {emp.admissionDate
+                      ? new Date(emp.admissionDate).toLocaleString()
+                      : ""}
+                  </td>
+                  <td>
+                    <button onClick={() => openEdit(emp)} className="edit-btn">
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => viewPatient(emp)}
+                      className="view-btn"
+                    >
+                      View
+                    </button>
+                    <button
+                      onClick={() => deleteEmployee(emp.id)}
+                      className="delete-btn"
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}

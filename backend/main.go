@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"
@@ -828,7 +829,9 @@ func createPatientsTable() {
 // Library endpoint: surgical options
 func getSurgicalLib(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	rows, err := db.Query("SELECT SURGERY_CODE, SURGERY_DESC FROM tsekap_lib_surgical ORDER BY SORT_NO, SURGERY_CODE")
+	// Use the actual column names present in the database. Some installs
+	// name the columns `surgery_code`, `surgery_name` and `description`.
+	rows, err := db.Query("SELECT surgery_code, surgery_name, description FROM tsekap_lib_surgical ORDER BY sort_order, surgery_code")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -836,15 +839,32 @@ func getSurgicalLib(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type SurgItem struct {
-		SURGERY_CODE string `json:"SURGERY_CODE"`
-		SURGERY_DESC string `json:"SURGERY_DESC"`
+		SurgeryCode string `json:"surgery_code"`
+		SurgeryName string `json:"surgery_name"`
+		Description string `json:"description"`
 	}
 
 	list := []SurgItem{}
 	for rows.Next() {
-		var code, desc string
-		rows.Scan(&code, &desc)
-		list = append(list, SurgItem{SURGERY_CODE: code, SURGERY_DESC: desc})
+		var code, name, desc sql.NullString
+		if err := rows.Scan(&code, &name, &desc); err != nil {
+			continue
+		}
+		// Normalize and skip empty/null-like values coming from different DB installs
+		codeStr := strings.TrimSpace(code.String)
+		nameStr := strings.TrimSpace(name.String)
+		descStr := strings.TrimSpace(desc.String)
+		if nameStr == "" || strings.EqualFold(nameStr, "(null)") {
+			// skip rows without a valid name
+			continue
+		}
+		if codeStr == "" || strings.EqualFold(codeStr, "(null)") {
+			// allow missing code but if it's the literal '(NULL)' skip
+			if codeStr == "(NULL)" {
+				continue
+			}
+		}
+		list = append(list, SurgItem{SurgeryCode: codeStr, SurgeryName: nameStr, Description: descStr})
 	}
 	json.NewEncoder(w).Encode(list)
 }
