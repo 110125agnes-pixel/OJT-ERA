@@ -45,7 +45,7 @@ cd backend
 go mod download
 
 # Create .env file (optional)
-copy .env.example .env
+# copy .env.example .env
 # Edit .env with your database credentials
 
 # Run the server
