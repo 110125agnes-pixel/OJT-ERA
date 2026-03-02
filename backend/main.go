@@ -159,6 +159,8 @@ func main() {
 	createMedHistSummaryTable()
 	// Ensure patient_femalehistory table exists (stores Female tab data)
 	createPatientFemaleHistoryTable()
+	// Ensure tsekap_lib_femalehistory library table exists
+	createFemaleHistoryLibTable()
 
 	// Setup router
 	router := mux.NewRouter()
@@ -223,7 +225,10 @@ func main() {
 	// HEENT library
 	router.HandleFunc("/api/lib/heent", getHeentLib).Methods("GET")
 	router.HandleFunc("/api/lib/heent", saveHeentLib).Methods("POST")
-	// Debug: dump all tables and rows from konsulta database
+	// Female History Library
+	router.HandleFunc("/api/lib/femalehistory", getFemaleHistoryLib).Methods("GET")
+	router.HandleFunc("/api/lib/femalehistory", saveFemaleHistoryLib).Methods("POST")
+	router.HandleFunc("/api/lib/femalehistory/{id}", deleteFemaleHistoryLib).Methods("DELETE")
 	router.HandleFunc("/api/debug/dump", dumpDB).Methods("GET")
 	// Family Library
 	router.HandleFunc("/api/patients/{patientId}/family-history", getFamilyHistory).Methods("GET")
@@ -578,72 +583,101 @@ func getFemaleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// build response map (keys match frontend state names)
+	// helper: strip time suffix from MySQL DATE strings returned with parseTime=true
+	// e.g. "2026-03-03T00:00:00Z" -> "2026-03-03" so <input type="date"> works in browser
+	trimDate := func(s string) string {
+		if len(s) > 10 {
+			return s[:10]
+		}
+		return s
+	}
+
+	// Always return ALL keys with defaults so the frontend state is fully replaced.
+	// This prevents stale local state when fields haven't been filled yet (NULL in DB).
+	fh["ageOfFirstMenstruation"] = ""
 	if menarcheAge.Valid {
 		fh["ageOfFirstMenstruation"] = fmt.Sprintf("%d", menarcheAge.Int64)
 	}
+	fh["dateOfLastMenstrualPeriod"] = ""
 	if lastMenstrual.Valid {
-		fh["dateOfLastMenstrualPeriod"] = lastMenstrual.String
+		fh["dateOfLastMenstrualPeriod"] = trimDate(lastMenstrual.String)
 	}
+	fh["durationOfMenstrualPeriod"] = ""
 	if periodDuration.Valid {
 		fh["durationOfMenstrualPeriod"] = fmt.Sprintf("%d", periodDuration.Int64)
 	}
+	fh["intervalCycleOfMenstruation"] = ""
 	if cycleLength.Valid {
 		fh["intervalCycleOfMenstruation"] = fmt.Sprintf("%d", cycleLength.Int64)
 	}
+	fh["numberOfPadsPerDay"] = ""
 	if padsPerDay.Valid {
 		fh["numberOfPadsPerDay"] = fmt.Sprintf("%d", padsPerDay.Int64)
 	}
+	fh["onsetOfSexualIntercourse"] = ""
 	if sexualOnset.Valid {
 		fh["onsetOfSexualIntercourse"] = fmt.Sprintf("%d", sexualOnset.Int64)
 	}
+	fh["birthControlMethod"] = ""
 	if birthControl.Valid {
 		fh["birthControlMethod"] = birthControl.String
 	}
+	fh["isMenopause"] = false
 	if isMenopause.Valid {
 		fh["isMenopause"] = isMenopause.Int64 == 1
 	}
+	fh["ageOfMenopause"] = ""
 	if menopauseAge.Valid {
 		fh["ageOfMenopause"] = fmt.Sprintf("%d", menopauseAge.Int64)
 	}
+	fh["isMenstrualHistoryApplicable"] = false
 	if isMenstrualApplicable.Valid {
 		fh["isMenstrualHistoryApplicable"] = isMenstrualApplicable.Int64 == 1
 	}
-
+	fh["numberOfPregnancyToDate"] = ""
 	if gravidity.Valid {
 		fh["numberOfPregnancyToDate"] = fmt.Sprintf("%d", gravidity.Int64)
 	}
+	fh["numberOfDeliveryToDate"] = ""
 	if parity.Valid {
 		fh["numberOfDeliveryToDate"] = fmt.Sprintf("%d", parity.Int64)
 	}
+	fh["typeOfDelivery"] = ""
 	if deliveryType.Valid {
 		fh["typeOfDelivery"] = deliveryType.String
 	}
+	fh["numberOfFullTermPregnancy"] = ""
 	if fullTermCount.Valid {
 		fh["numberOfFullTermPregnancy"] = fmt.Sprintf("%d", fullTermCount.Int64)
 	}
+	fh["numberOfPrematurePregnancy"] = ""
 	if prematureCount.Valid {
 		fh["numberOfPrematurePregnancy"] = fmt.Sprintf("%d", prematureCount.Int64)
 	}
+	fh["numberOfAbortion"] = ""
 	if abortionCount.Valid {
 		fh["numberOfAbortion"] = fmt.Sprintf("%d", abortionCount.Int64)
 	}
+	fh["numberOfLivingChildren"] = ""
 	if livingChildren.Valid {
 		fh["numberOfLivingChildren"] = fmt.Sprintf("%d", livingChildren.Int64)
 	}
+	fh["pregnancyInducedHypertension"] = false
 	if pregInducedHTN.Valid {
 		fh["pregnancyInducedHypertension"] = pregInducedHTN.Int64 == 1
 	}
+	fh["accessToFamilyPlanningCounselling"] = false
 	if hasFamilyPlanning.Valid {
 		fh["accessToFamilyPlanningCounselling"] = hasFamilyPlanning.Int64 == 1
 	}
+	fh["isPregnancyHistoryApplicable"] = false
 	if isPregApplicable.Valid {
 		fh["isPregnancyHistoryApplicable"] = isPregApplicable.Int64 == 1
 	}
-
-	fh["notes"] = notes.String
-	fh["date_added"] = dateAdded.String
-	fh["added_by"] = addedBy.String
+	fh["notes"] = ""
+	if notes.Valid {
+		fh["notes"] = notes.String
+	}
 	log.Printf("getFemaleHistory: returning data for patno=%s patientID=%s: %+v", patno, patientID, fh)
 	json.NewEncoder(w).Encode(fh)
 }
@@ -758,6 +792,14 @@ func saveFemaleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// helper for saveFemaleHistory: strip time suffix from date strings
+	trimDate2 := func(s string) string {
+		if len(s) > 10 {
+			return s[:10]
+		}
+		return s
+	}
+
 	saved := map[string]interface{}{}
 	saved["ageOfFirstMenstruation"] = ""
 	if m2.Valid {
@@ -765,7 +807,7 @@ func saveFemaleHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	saved["dateOfLastMenstrualPeriod"] = ""
 	if lm2.Valid {
-		saved["dateOfLastMenstrualPeriod"] = lm2.String
+		saved["dateOfLastMenstrualPeriod"] = trimDate2(lm2.String)
 	}
 	saved["durationOfMenstrualPeriod"] = ""
 	if pd2.Valid {
@@ -2024,4 +2066,131 @@ func saveDigitalRectalLib(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+}
+
+// ==================== FEMALE HISTORY LIBRARY ====================
+
+func createFemaleHistoryLibTable() {
+	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS tsekap_lib_femalehistory (
+		FH_ID INT AUTO_INCREMENT PRIMARY KEY,
+		FH_FIELD_KEY VARCHAR(100) NOT NULL,
+		FH_LABEL VARCHAR(255) NOT NULL,
+		FH_SECTION VARCHAR(100),
+		FH_NUMBER INT DEFAULT 0,
+		SORT_NO INT DEFAULT 0,
+		LIB_STAT TINYINT(1) DEFAULT 1
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+	if err != nil {
+		log.Printf("Warning createFemaleHistoryLibTable: %v", err)
+	} else {
+		log.Println("✓ tsekap_lib_femalehistory table ready")
+	}
+	seedFemaleHistoryLib()
+}
+
+func seedFemaleHistoryLib() {
+	var count int
+	db.QueryRow("SELECT COUNT(*) FROM tsekap_lib_femalehistory").Scan(&count)
+	if count > 0 {
+		return
+	}
+	seeds := []struct {
+		key     string
+		label   string
+		section string
+		number  int
+		sortNo  int
+	}{
+		{"ageOfFirstMenstruation", "Age of First Menstruation (Menarche)", "Menstrual History", 1, 1},
+		{"dateOfLastMenstrualPeriod", "Date of Last Menstrual Period", "Menstrual History", 2, 2},
+		{"durationOfMenstrualPeriod", "Duration of Menstrual Period in Number of Days", "Menstrual History", 3, 3},
+		{"intervalCycleOfMenstruation", "Interval/Cycle of Menstruation in Number of Days", "Menstrual History", 4, 4},
+		{"numberOfPadsPerDay", "Number of Pads/Napkins Used per Day during Menstruation", "Menstrual History", 5, 5},
+		{"onsetOfSexualIntercourse", "Onset of Sexual Intercourse (Age of First Sexual Intercourse)", "Menstrual History", 6, 6},
+		{"birthControlMethod", "Birth Control Method Used", "Menstrual History", 7, 7},
+		{"isMenopause", "Is Menopause?", "Menstrual History", 8, 8},
+		{"ageOfMenopause", "If Menopause, Age of Menopause", "Menstrual History", 9, 9},
+		{"isMenstrualHistoryApplicable", "Is menstrual history applicable?", "Menstrual History", 10, 10},
+		{"numberOfPregnancyToDate", "Number of Pregnancy to Date - Gravity Chief", "Pregnancy History", 1, 11},
+		{"numberOfDeliveryToDate", "Number of Delivery to Date - Parity", "Pregnancy History", 2, 12},
+		{"typeOfDelivery", "Type of Delivery", "Pregnancy History", 3, 13},
+		{"numberOfFullTermPregnancy", "Number of Full Term Pregnancy", "Pregnancy History", 4, 14},
+		{"numberOfPrematurePregnancy", "Number of Premature Pregnancy", "Pregnancy History", 5, 15},
+		{"numberOfAbortion", "Number of Abortion", "Pregnancy History", 6, 16},
+		{"numberOfLivingChildren", "Number of Living Children", "Pregnancy History", 7, 17},
+		{"pregnancyInducedHypertension", "If Pregnancy - Induced Hypertension (Pre - Eclampsia)", "Pregnancy History", 8, 18},
+		{"accessToFamilyPlanningCounselling", "If with access to Family Planning Counselling", "Pregnancy History", 9, 19},
+		{"isPregnancyHistoryApplicable", "Is pregnancy history applicable?", "Pregnancy History", 10, 20},
+	}
+	for _, s := range seeds {
+		db.Exec(`INSERT INTO tsekap_lib_femalehistory (FH_FIELD_KEY, FH_LABEL, FH_SECTION, FH_NUMBER, SORT_NO, LIB_STAT) VALUES (?, ?, ?, ?, ?, 1)`,
+			s.key, s.label, s.section, s.number, s.sortNo)
+	}
+	log.Println("✓ tsekap_lib_femalehistory seeded with 20 fields")
+}
+
+func getFemaleHistoryLib(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	rows, err := db.Query("SELECT FH_ID, FH_FIELD_KEY, FH_LABEL, FH_SECTION, FH_NUMBER, SORT_NO, LIB_STAT FROM tsekap_lib_femalehistory ORDER BY SORT_NO, FH_ID")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type FHItem struct {
+		ID       int    `json:"id"`
+		FieldKey string `json:"field_key"`
+		Label    string `json:"label"`
+		Section  string `json:"section"`
+		Number   int    `json:"number"`
+		SortNo   int    `json:"sort_no"`
+		LibStat  int    `json:"lib_stat"`
+	}
+	list := []FHItem{}
+	for rows.Next() {
+		var it FHItem
+		rows.Scan(&it.ID, &it.FieldKey, &it.Label, &it.Section, &it.Number, &it.SortNo, &it.LibStat)
+		list = append(list, it)
+	}
+	json.NewEncoder(w).Encode(list)
+}
+
+func saveFemaleHistoryLib(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var item struct {
+		ID      int    `json:"id"`
+		Label   string `json:"label"`
+		SortNo  int    `json:"sort_no"`
+		LibStat int    `json:"lib_stat"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&item); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if item.ID > 0 {
+		_, err := db.Exec(`UPDATE tsekap_lib_femalehistory SET FH_LABEL=?, SORT_NO=?, LIB_STAT=? WHERE FH_ID=?`,
+			item.Label, item.SortNo, item.LibStat, item.ID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	} else {
+		http.Error(w, "Adding new rows not supported for this library", http.StatusBadRequest)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+}
+
+func deleteFemaleHistoryLib(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	id := mux.Vars(r)["id"]
+	_, err := db.Exec(`DELETE FROM tsekap_lib_femalehistory WHERE FH_ID = ?`, id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"message": "Deleted"})
 }
