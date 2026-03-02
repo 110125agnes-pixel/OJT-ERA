@@ -647,26 +647,62 @@ func getImmunization(w http.ResponseWriter, r *http.Request) {
 		rows.Close()
 	}
 
-	// Fetch saved pipe-separated 1|0 string for this patient
-	var saved string
-	db.QueryRow("SELECT imm_code FROM patient_immunization WHERE patno = ?", patno).Scan(&saved)
-	bits := []string{}
-	if saved != "" {
-		bits = strings.Split(saved, "|")
+	// Fetch saved group strings for this patient (one column per category)
+	var savedChild, savedYoung, savedPreg, savedElderly, otherNotes sql.NullString
+	db.QueryRow("SELECT imm_child, imm_young, imm_pregnant, imm_elderly, other_notes FROM patient_immunization WHERE patno = ?", patno).
+		Scan(&savedChild, &savedYoung, &savedPreg, &savedElderly, &otherNotes)
+
+	childBits := []string{}
+	youngBits := []string{}
+	pregBits := []string{}
+	elderlyBits := []string{}
+	if savedChild.Valid && savedChild.String != "" {
+		childBits = strings.Split(savedChild.String, "|")
+	}
+	if savedYoung.Valid && savedYoung.String != "" {
+		youngBits = strings.Split(savedYoung.String, "|")
+	}
+	if savedPreg.Valid && savedPreg.String != "" {
+		pregBits = strings.Split(savedPreg.String, "|")
+	}
+	if savedElderly.Valid && savedElderly.String != "" {
+		elderlyBits = strings.Split(savedElderly.String, "|")
 	}
 
-	// Build response
+	// Build response using per-category bit arrays
 	var list []ImmunizationItem
-	for i, e := range lib {
+	// counters to track index within each category
+	childIdx, youngIdx, pregIdx, elderlyIdx := 0, 0, 0, 0
+	for _, e := range lib {
 		isChecked := false
-		if i < len(bits) {
-			isChecked = bits[i] == "1"
+		switch e.Category {
+		case "child":
+			if childIdx < len(childBits) {
+				isChecked = childBits[childIdx] == "1"
+			}
+			childIdx++
+		case "young":
+			if youngIdx < len(youngBits) {
+				isChecked = youngBits[youngIdx] == "1"
+			}
+			youngIdx++
+		case "pregnant":
+			if pregIdx < len(pregBits) {
+				isChecked = pregBits[pregIdx] == "1"
+			}
+			pregIdx++
+		case "elderly":
+			if elderlyIdx < len(elderlyBits) {
+				isChecked = elderlyBits[elderlyIdx] == "1"
+			}
+			elderlyIdx++
 		}
 		list = append(list, ImmunizationItem{
-			VaccineCode: e.Code,
-			VaccineName: e.Name,
-			Category:    e.Category,
-			IsChecked:   isChecked,
+			VaccineCode:      e.Code,
+			VaccineName:      e.Name,
+			Category:         e.Category,
+			IsChecked:        isChecked,
+			OtherDescription: otherNotes.String,
 		})
 	}
 	json.NewEncoder(w).Encode(list)
@@ -877,14 +913,18 @@ func saveImmunization(w http.ResponseWriter, r *http.Request) {
 		patno = patientID
 	}
 
-	// Rebuild library order (same order as getImmunization)
-	var libOrder []string
+	// Rebuild per-category library orders (same order as getImmunization)
+	childOrder := []string{}
+	youngOrder := []string{}
+	pregOrder := []string{}
+	elderlyOrder := []string{}
+
 	rows, err := db.Query("SELECT IMM_CODE FROM tsekap_lib_immchild ORDER BY IMM_CODE")
 	if err == nil {
 		for rows.Next() {
 			var c string
 			rows.Scan(&c)
-			libOrder = append(libOrder, c)
+			childOrder = append(childOrder, c)
 		}
 		rows.Close()
 	}
@@ -893,7 +933,7 @@ func saveImmunization(w http.ResponseWriter, r *http.Request) {
 		for rows.Next() {
 			var c string
 			rows.Scan(&c)
-			libOrder = append(libOrder, c)
+			youngOrder = append(youngOrder, c)
 		}
 		rows.Close()
 	}
@@ -902,7 +942,7 @@ func saveImmunization(w http.ResponseWriter, r *http.Request) {
 		for rows.Next() {
 			var c string
 			rows.Scan(&c)
-			libOrder = append(libOrder, c)
+			pregOrder = append(pregOrder, c)
 		}
 		rows.Close()
 	}
@@ -911,47 +951,69 @@ func saveImmunization(w http.ResponseWriter, r *http.Request) {
 		for rows.Next() {
 			var c string
 			rows.Scan(&c)
-			libOrder = append(libOrder, c)
+			elderlyOrder = append(elderlyOrder, c)
 		}
 		rows.Close()
 	}
 
 	// Map incoming items by code
 	checkedMap := map[string]bool{}
+	var otherNotes string
 	for _, it := range items {
-		checkedMap[it.VaccineCode] = it.IsChecked
-	}
-
-	bits := make([]string, len(libOrder))
-	for i, code := range libOrder {
-		if checkedMap[code] {
-			bits[i] = "1"
-		} else {
-			bits[i] = "0"
+		if it.VaccineCode != "" {
+			checkedMap[it.VaccineCode] = it.IsChecked
+		}
+		// capture other_notes if frontend provides it as OtherDescription
+		if it.OtherDescription != "" {
+			otherNotes = it.OtherDescription
 		}
 	}
-	immCode := strings.Join(bits, "|")
+
+	// Build bits per category
+	buildBits := func(order []string) string {
+		if len(order) == 0 {
+			return ""
+		}
+		bits := make([]string, len(order))
+		for i, code := range order {
+			if checkedMap[code] {
+				bits[i] = "1"
+			} else {
+				bits[i] = "0"
+			}
+		}
+		return strings.Join(bits, "|")
+	}
+
+	immChild := buildBits(childOrder)
+	immYoung := buildBits(youngOrder)
+	immPreg := buildBits(pregOrder)
+	immElderly := buildBits(elderlyOrder)
 
 	_, execErr := db.Exec(
-		`INSERT INTO patient_immunization (patno, imm_code, date_added, added_by)
-		 VALUES (?, ?, NOW(), 'system')
-		 ON DUPLICATE KEY UPDATE imm_code = VALUES(imm_code), date_added = NOW()`,
-		patno, immCode)
+		`INSERT INTO patient_immunization (patno, imm_child, imm_young, imm_pregnant, imm_elderly, other_notes, date_added, added_by)
+		 VALUES (?, ?, ?, ?, ?, ?, NOW(), 'system')
+		 ON DUPLICATE KEY UPDATE imm_child = VALUES(imm_child), imm_young = VALUES(imm_young), imm_pregnant = VALUES(imm_pregnant), imm_elderly = VALUES(imm_elderly), other_notes = VALUES(other_notes), date_added = NOW()`,
+		patno, immChild, immYoung, immPreg, immElderly, otherNotes)
 	if execErr != nil {
 		log.Println("saveImmunization error:", execErr)
 		http.Error(w, execErr.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]string{"message": "Saved", "patno": patno, "imm_code": immCode})
+	json.NewEncoder(w).Encode(map[string]string{"message": "Saved", "patno": patno})
 }
 
 // createImmunizationSummaryTable creates patient_immunization table used to store
 // a pipe-separated 1|0 string keyed by patno (case_no) similar to patient_medhist
 func createImmunizationSummaryTable() {
 	db.Exec(`CREATE TABLE IF NOT EXISTS patient_immunization (
-		patno VARCHAR(20) NOT NULL PRIMARY KEY,
-		imm_code VARCHAR(2000) NOT NULL DEFAULT '',
+		patno VARCHAR(50) NOT NULL PRIMARY KEY,
+		imm_child VARCHAR(2000) NOT NULL DEFAULT '',
+		imm_young VARCHAR(2000) NOT NULL DEFAULT '',
+		imm_pregnant VARCHAR(2000) NOT NULL DEFAULT '',
+		imm_elderly VARCHAR(2000) NOT NULL DEFAULT '',
+		other_notes TEXT,
 		date_added DATETIME,
 		added_by VARCHAR(50)
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
