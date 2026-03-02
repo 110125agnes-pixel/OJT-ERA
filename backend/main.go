@@ -159,6 +159,9 @@ func main() {
 	// (e.g. "1|0|1|0|0") representing which diseases were checked in the Medical tab.
 	// It is separate from tsekap_tbl_prof_medhist which has FK constraints.
 	createMedHistSummaryTable()
+
+	// Ensure patient_famhist summary table exists (family history stored as pipe-separated 1|0)
+	createFamilyHistSummaryTable()
 	// Ensure patient_immunization summary table exists (patno keyed, 1|0 bits)
 	createImmunizationSummaryTable()
 
@@ -539,30 +542,127 @@ func saveMedicalHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func getFamilyHistory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	patientID := mux.Vars(r)["patientId"]
-	rows, _ := db.Query("SELECT id, patient_id, disease_code, disease_name, notes, is_checked FROM tsekap_tbl_prof_famhist WHERE patient_id = ?", patientID)
-	defer rows.Close()
+
+	// Translate numeric patient ID → case_no (patno)
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		patno = patientID
+	}
+
+	// Load library order (defines bit positions)
+	libRows, err := db.Query("SELECT mdisease_code, mdisease_desc FROM tsekap_lib_mdiseases ORDER BY mdisease_code")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer libRows.Close()
+
+	type libEntry struct{ Code, Desc string }
+	var lib []libEntry
+	for libRows.Next() {
+		var e libEntry
+		libRows.Scan(&e.Code, &e.Desc)
+		lib = append(lib, e)
+	}
+
+	// Fetch saved pipe-separated string for this patient
+	var saved string
+	var notes sql.NullString
+	db.QueryRow("SELECT fdisease_code, notes FROM patient_famhist WHERE patno = ?", patno).Scan(&saved, &notes)
+	bits := []string{}
+	if saved != "" {
+		bits = strings.Split(saved, "|")
+	}
+
+	// Build response
 	var list []FamilyHistoryItem
-	for rows.Next() {
-		var h FamilyHistoryItem
-		rows.Scan(&h.ID, &h.PatientID, &h.DiseaseCode, &h.DiseaseName, &h.Notes, &h.IsChecked)
-		list = append(list, h)
+	for i, d := range lib {
+		isChecked := false
+		if i < len(bits) {
+			isChecked = bits[i] == "1"
+		}
+		fh := FamilyHistoryItem{
+			DiseaseCode: d.Code,
+			DiseaseName: d.Desc,
+			IsChecked:   isChecked,
+		}
+		// attach notes on first element for frontend compatibility
+		if i == 0 && notes.Valid {
+			fh.Notes = notes.String
+		}
+		list = append(list, fh)
 	}
 	json.NewEncoder(w).Encode(list)
 }
 
 func saveFamilyHistory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	patientID := mux.Vars(r)["patientId"]
+
+	// Decode incoming items array
 	var items []FamilyHistoryItem
-	json.NewDecoder(r.Body).Decode(&items)
-	db.Exec("DELETE FROM tsekap_tbl_prof_famhist WHERE patient_id = ?", patientID)
-	for _, item := range items {
-		if item.IsChecked {
-			db.Exec("INSERT INTO tsekap_tbl_prof_famhist (patient_id, disease_code, disease_name, notes, is_checked) VALUES (?, ?, ?, ?, ?)",
-				patientID, item.DiseaseCode, item.DiseaseName, item.Notes, true)
+	if err := json.NewDecoder(r.Body).Decode(&items); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Translate numeric patient ID → case_no (patno)
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		patno = patientID
+	}
+
+	// Re-fetch library order
+	libRows, err := db.Query("SELECT mdisease_code FROM tsekap_lib_mdiseases ORDER BY mdisease_code")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer libRows.Close()
+	var libOrder []string
+	for libRows.Next() {
+		var code string
+		libRows.Scan(&code)
+		libOrder = append(libOrder, code)
+	}
+
+	// Build lookup map from request body
+	checkedMap := map[string]bool{}
+	var notes string
+	for _, it := range items {
+		checkedMap[it.DiseaseCode] = it.IsChecked
+		if it.Notes != "" {
+			notes = it.Notes
 		}
 	}
-	json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+
+	bits := make([]string, len(libOrder))
+	for i, code := range libOrder {
+		if checkedMap[code] {
+			bits[i] = "1"
+		} else {
+			bits[i] = "0"
+		}
+	}
+	fdiseaseCode := strings.Join(bits, "|")
+
+	// UPSERT into patient_famhist
+	_, execErr := db.Exec(
+		`INSERT INTO patient_famhist (patno, fdisease_code, notes, date_added, added_by)
+		 VALUES (?, ?, ?, NOW(), 'system')
+		 ON DUPLICATE KEY UPDATE fdisease_code = VALUES(fdisease_code), notes = VALUES(notes), date_added = NOW()`,
+		patno, fdiseaseCode, notes)
+	if execErr != nil {
+		log.Println("saveFamilyHistory error:", execErr)
+		http.Error(w, execErr.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"message": "Saved", "patno": patno})
 }
 
 func getSurgicalHistory(w http.ResponseWriter, r *http.Request) {
@@ -1219,6 +1319,26 @@ func createMedHistSummaryTable() {
 		added_by     VARCHAR(50)
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
 	log.Println("✓ patient_medhist table ready")
+}
+
+// createFamilyHistSummaryTable auto-creates the patient_famhist table on backend startup.
+// Schema design:
+//
+//	patno        - the patient's case_no (e.g. C2026-00001), serves as PRIMARY KEY
+//	fdisease_code - pipe-separated 0/1 string, one bit per disease in tsekap_lib_mdiseases order
+//	               e.g. "1|0|1|0" means disease 1 and 3 are checked
+//	notes        - optional freeform notes saved from the frontend
+//	date_added   - timestamp of last save
+//	added_by     - who saved (currently always 'system')
+func createFamilyHistSummaryTable() {
+	db.Exec(`CREATE TABLE IF NOT EXISTS patient_famhist (
+		patno VARCHAR(20) NOT NULL PRIMARY KEY,
+		fdisease_code VARCHAR(500) NOT NULL DEFAULT '',
+		notes TEXT,
+		date_added DATETIME,
+		added_by VARCHAR(50)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+	log.Println("✓ patient_famhist table ready")
 }
 
 // ensureMedHistColumns — kept as no-op for compatibility
