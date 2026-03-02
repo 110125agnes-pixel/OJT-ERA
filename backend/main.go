@@ -15,18 +15,6 @@ import (
 	"github.com/rs/cors"
 )
 
-// ==================== MODELS ====================
-
-type InventoryItem struct {
-	ID       int     `json:"id"`
-	ItemName string  `json:"item_name"`
-	Category string  `json:"category"`
-	Brand    string  `json:"brand"`
-	Quantity int     `json:"quantity"`
-	Unit     string  `json:"unit"`
-	Price    float64 `json:"price"`
-}
-
 type SocialHistory struct {
 	ID                    int    `json:"id"`
 	PatientID             int    `json:"patient_id"`
@@ -36,6 +24,16 @@ type SocialHistory struct {
 	BottlesPerDay         int    `json:"bottles_per_day"`
 	IsIllicitDrugUser     string `json:"is_illicit_drug_user"`
 	IsSexuallyActive      string `json:"is_sexually_active"`
+}
+
+type InventoryItem struct {
+	ID       int     `json:"id"`
+	ItemName string  `json:"item_name"`
+	Category string  `json:"category"`
+	Brand    string  `json:"brand"`
+	Quantity int     `json:"quantity"`
+	Unit     string  `json:"unit"`
+	Price    float64 `json:"price"`
 }
 
 type PertinentPhysicalExam struct {
@@ -159,6 +157,8 @@ func main() {
 	// (e.g. "1|0|1|0|0") representing which diseases were checked in the Medical tab.
 	// It is separate from tsekap_tbl_prof_medhist which has FK constraints.
 	createMedHistSummaryTable()
+	// Ensure patient_femalehistory table exists (stores Female tab data)
+	createPatientFemaleHistoryTable()
 
 	// Setup router
 	router := mux.NewRouter()
@@ -183,6 +183,8 @@ func main() {
 	router.HandleFunc("/api/patients/{patientId}/pertinent-physical-exam", savePertinentPhysicalExam).Methods("POST")
 	router.HandleFunc("/api/patients/{patientId}/medical-history", getMedicalHistory).Methods("GET")
 	router.HandleFunc("/api/patients/{patientId}/medical-history", saveMedicalHistory).Methods("POST")
+	router.HandleFunc("/api/patients/{patientId}/female-history", getFemaleHistory).Methods("GET")
+	router.HandleFunc("/api/patients/{patientId}/female-history", saveFemaleHistory).Methods("POST")
 	router.HandleFunc("/api/lib/mdiseases", getMedicalDiseases).Methods("GET")
 
 	// Physical Examination Routes (NEW)
@@ -534,6 +536,324 @@ func saveMedicalHistory(w http.ResponseWriter, r *http.Request) {
 
 	// Return the saved values so the frontend/SQLyog can verify what was stored
 	json.NewEncoder(w).Encode(map[string]string{"message": "Saved", "patno": patno, "mdisease_code": mdiseaseCode})
+}
+
+// getFemaleHistory handles GET /api/patients/{patientId}/female-history
+// Returns the stored female history row (structured columns) for the given patient.
+func getFemaleHistory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	patientID := mux.Vars(r)["patientId"]
+
+	// translate numeric ID -> case_no (patno)
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		patno = patientID
+	}
+
+	// Read row
+	row := db.QueryRow(`SELECT menarche_age, last_menstrual, period_duration_days, cycle_length_days,
+		pads_per_day, sexual_onset_age, birth_control_used, is_menopause, menopause_age, is_menstrual_applicable,
+		gravidity, parity, delivery_type, full_term_pregnancy_count, premature_pregnancy_count, abortion_count,
+		living_children, preg_induced_htn, has_family_planning, is_preg_history_applicable, notes, date_added, added_by
+		FROM patient_femalehistory WHERE patno = ?`, patno)
+
+	var fh = map[string]interface{}{}
+	var (
+		menarcheAge, periodDuration, cycleLength, padsPerDay, sexualOnset               sql.NullInt64
+		isMenopause, menopauseAge, isMenstrualApplicable                                sql.NullInt64
+		gravidity, parity, fullTermCount, prematureCount, abortionCount, livingChildren sql.NullInt64
+		pregInducedHTN, hasFamilyPlanning, isPregApplicable                             sql.NullInt64
+		lastMenstrual, birthControl, deliveryType, notes, dateAdded, addedBy            sql.NullString
+	)
+
+	err := row.Scan(&menarcheAge, &lastMenstrual, &periodDuration, &cycleLength,
+		&padsPerDay, &sexualOnset, &birthControl, &isMenopause, &menopauseAge, &isMenstrualApplicable,
+		&gravidity, &parity, &deliveryType, &fullTermCount, &prematureCount, &abortionCount,
+		&livingChildren, &pregInducedHTN, &hasFamilyPlanning, &isPregApplicable, &notes, &dateAdded, &addedBy)
+	if err != nil {
+		// no row found -> return empty/default object
+		log.Printf("getFemaleHistory: no row found for patno=%s (patientID=%s)", patno, patientID)
+		json.NewEncoder(w).Encode(map[string]interface{}{})
+		return
+	}
+
+	// build response map (keys match frontend state names)
+	if menarcheAge.Valid {
+		fh["ageOfFirstMenstruation"] = fmt.Sprintf("%d", menarcheAge.Int64)
+	}
+	if lastMenstrual.Valid {
+		fh["dateOfLastMenstrualPeriod"] = lastMenstrual.String
+	}
+	if periodDuration.Valid {
+		fh["durationOfMenstrualPeriod"] = fmt.Sprintf("%d", periodDuration.Int64)
+	}
+	if cycleLength.Valid {
+		fh["intervalCycleOfMenstruation"] = fmt.Sprintf("%d", cycleLength.Int64)
+	}
+	if padsPerDay.Valid {
+		fh["numberOfPadsPerDay"] = fmt.Sprintf("%d", padsPerDay.Int64)
+	}
+	if sexualOnset.Valid {
+		fh["onsetOfSexualIntercourse"] = fmt.Sprintf("%d", sexualOnset.Int64)
+	}
+	if birthControl.Valid {
+		fh["birthControlMethod"] = birthControl.String
+	}
+	if isMenopause.Valid {
+		fh["isMenopause"] = isMenopause.Int64 == 1
+	}
+	if menopauseAge.Valid {
+		fh["ageOfMenopause"] = fmt.Sprintf("%d", menopauseAge.Int64)
+	}
+	if isMenstrualApplicable.Valid {
+		fh["isMenstrualHistoryApplicable"] = isMenstrualApplicable.Int64 == 1
+	}
+
+	if gravidity.Valid {
+		fh["numberOfPregnancyToDate"] = fmt.Sprintf("%d", gravidity.Int64)
+	}
+	if parity.Valid {
+		fh["numberOfDeliveryToDate"] = fmt.Sprintf("%d", parity.Int64)
+	}
+	if deliveryType.Valid {
+		fh["typeOfDelivery"] = deliveryType.String
+	}
+	if fullTermCount.Valid {
+		fh["numberOfFullTermPregnancy"] = fmt.Sprintf("%d", fullTermCount.Int64)
+	}
+	if prematureCount.Valid {
+		fh["numberOfPrematurePregnancy"] = fmt.Sprintf("%d", prematureCount.Int64)
+	}
+	if abortionCount.Valid {
+		fh["numberOfAbortion"] = fmt.Sprintf("%d", abortionCount.Int64)
+	}
+	if livingChildren.Valid {
+		fh["numberOfLivingChildren"] = fmt.Sprintf("%d", livingChildren.Int64)
+	}
+	if pregInducedHTN.Valid {
+		fh["pregnancyInducedHypertension"] = pregInducedHTN.Int64 == 1
+	}
+	if hasFamilyPlanning.Valid {
+		fh["accessToFamilyPlanningCounselling"] = hasFamilyPlanning.Int64 == 1
+	}
+	if isPregApplicable.Valid {
+		fh["isPregnancyHistoryApplicable"] = isPregApplicable.Int64 == 1
+	}
+
+	fh["notes"] = notes.String
+	fh["date_added"] = dateAdded.String
+	fh["added_by"] = addedBy.String
+	log.Printf("getFemaleHistory: returning data for patno=%s patientID=%s: %+v", patno, patientID, fh)
+	json.NewEncoder(w).Encode(fh)
+}
+
+// saveFemaleHistory handles POST /api/patients/{patientId}/female-history
+// Accepts a JSON payload matching the frontend state and upserts into patient_femalehistory
+func saveFemaleHistory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	patientID := mux.Vars(r)["patientId"]
+
+	var payload map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// translate id -> patno
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		patno = patientID
+	}
+
+	// helper to read int-like values from payload
+	toInt := func(k string) interface{} {
+		if v, ok := payload[k]; ok && v != nil && v != "" {
+			switch t := v.(type) {
+			case float64:
+				return int(t)
+			case string:
+				if t == "" {
+					return nil
+				}
+				if i, err := strconv.Atoi(t); err == nil {
+					return i
+				}
+			}
+		}
+		return nil
+	}
+	toStr := func(k string) interface{} {
+		if v, ok := payload[k]; ok && v != nil {
+			return fmt.Sprintf("%v", v)
+		}
+		return nil
+	}
+	toBoolInt := func(k string) int {
+		if v, ok := payload[k]; ok && v != nil {
+			if b, ok2 := v.(bool); ok2 {
+				if b {
+					return 1
+				}
+				return 0
+			}
+			if s, ok3 := v.(string); ok3 {
+				if s == "true" {
+					return 1
+				}
+				return 0
+			}
+		}
+		return 0
+	}
+
+	log.Printf("saveFemaleHistory: received payload for patientID=%s patno=%s: %+v", patientID, patno, payload)
+
+	_, execErr := db.Exec(`INSERT INTO patient_femalehistory (
+		patno, menarche_age, last_menstrual, period_duration_days, cycle_length_days,
+		pads_per_day, sexual_onset_age, birth_control_used, is_menopause, menopause_age, is_menstrual_applicable,
+		gravidity, parity, delivery_type, full_term_pregnancy_count, premature_pregnancy_count, abortion_count,
+		living_children, preg_induced_htn, has_family_planning, is_preg_history_applicable, notes, date_added, added_by
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'system')
+	ON DUPLICATE KEY UPDATE
+		menarche_age = VALUES(menarche_age), last_menstrual = VALUES(last_menstrual), period_duration_days = VALUES(period_duration_days),
+		cycle_length_days = VALUES(cycle_length_days), pads_per_day = VALUES(pads_per_day), sexual_onset_age = VALUES(sexual_onset_age),
+		birth_control_used = VALUES(birth_control_used), is_menopause = VALUES(is_menopause), menopause_age = VALUES(menopause_age),
+		is_menstrual_applicable = VALUES(is_menstrual_applicable), gravidity = VALUES(gravidity), parity = VALUES(parity),
+		delivery_type = VALUES(delivery_type), full_term_pregnancy_count = VALUES(full_term_pregnancy_count),
+		premature_pregnancy_count = VALUES(premature_pregnancy_count), abortion_count = VALUES(abortion_count),
+		living_children = VALUES(living_children), preg_induced_htn = VALUES(preg_induced_htn), has_family_planning = VALUES(has_family_planning),
+		is_preg_history_applicable = VALUES(is_preg_history_applicable), notes = VALUES(notes), date_added = NOW()`,
+		patno,
+		toInt("ageOfFirstMenstruation"), toStr("dateOfLastMenstrualPeriod"), toInt("durationOfMenstrualPeriod"), toInt("intervalCycleOfMenstruation"),
+		toInt("numberOfPadsPerDay"), toInt("onsetOfSexualIntercourse"), toStr("birthControlMethod"), toBoolInt("isMenopause"), toInt("ageOfMenopause"), toBoolInt("isMenstrualHistoryApplicable"),
+		toInt("numberOfPregnancyToDate"), toInt("numberOfDeliveryToDate"), toStr("typeOfDelivery"), toInt("numberOfFullTermPregnancy"), toInt("numberOfPrematurePregnancy"), toInt("numberOfAbortion"),
+		toInt("numberOfLivingChildren"), toBoolInt("pregnancyInducedHypertension"), toBoolInt("accessToFamilyPlanningCounselling"), toBoolInt("isPregnancyHistoryApplicable"), toStr("notes"))
+
+	if execErr != nil {
+		log.Println("saveFemaleHistory error:", execErr)
+		http.Error(w, execErr.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// After saving, re-query the row and return the saved object (same shape as GET)
+	row2 := db.QueryRow(`SELECT menarche_age, last_menstrual, period_duration_days, cycle_length_days,
+		pads_per_day, sexual_onset_age, birth_control_used, is_menopause, menopause_age, is_menstrual_applicable,
+		gravidity, parity, delivery_type, full_term_pregnancy_count, premature_pregnancy_count, abortion_count,
+		living_children, preg_induced_htn, has_family_planning, is_preg_history_applicable, notes, date_added, added_by
+		FROM patient_femalehistory WHERE patno = ?`, patno)
+
+	var (
+		m2, pd2, cl2, pp2, so2                      sql.NullInt64
+		im2, ma2, ima2                              sql.NullInt64
+		g2, p2, ft2, prem2, ab2, lc2                sql.NullInt64
+		pih2, hfp2, ipa2                            sql.NullInt64
+		lm2, bc2, dt2, notes2, dateAdded2, addedBy2 sql.NullString
+	)
+	err2 := row2.Scan(&m2, &lm2, &pd2, &cl2, &pp2, &so2, &bc2, &im2, &ma2, &ima2, &g2, &p2, &dt2, &ft2, &prem2, &ab2, &lc2, &pih2, &hfp2, &ipa2, &notes2, &dateAdded2, &addedBy2)
+	if err2 != nil {
+		// saved but cannot re-read; return minimal confirmation
+		json.NewEncoder(w).Encode(map[string]string{"message": "Saved", "patno": patno})
+		return
+	}
+
+	saved := map[string]interface{}{}
+	saved["ageOfFirstMenstruation"] = ""
+	if m2.Valid {
+		saved["ageOfFirstMenstruation"] = fmt.Sprintf("%d", m2.Int64)
+	}
+	saved["dateOfLastMenstrualPeriod"] = ""
+	if lm2.Valid {
+		saved["dateOfLastMenstrualPeriod"] = lm2.String
+	}
+	saved["durationOfMenstrualPeriod"] = ""
+	if pd2.Valid {
+		saved["durationOfMenstrualPeriod"] = fmt.Sprintf("%d", pd2.Int64)
+	}
+	saved["intervalCycleOfMenstruation"] = ""
+	if cl2.Valid {
+		saved["intervalCycleOfMenstruation"] = fmt.Sprintf("%d", cl2.Int64)
+	}
+	saved["numberOfPadsPerDay"] = ""
+	if pp2.Valid {
+		saved["numberOfPadsPerDay"] = fmt.Sprintf("%d", pp2.Int64)
+	}
+	saved["onsetOfSexualIntercourse"] = ""
+	if so2.Valid {
+		saved["onsetOfSexualIntercourse"] = fmt.Sprintf("%d", so2.Int64)
+	}
+	saved["birthControlMethod"] = ""
+	if bc2.Valid {
+		saved["birthControlMethod"] = bc2.String
+	}
+	saved["isMenopause"] = false
+	if im2.Valid {
+		saved["isMenopause"] = im2.Int64 == 1
+	}
+	saved["ageOfMenopause"] = ""
+	if ma2.Valid {
+		saved["ageOfMenopause"] = fmt.Sprintf("%d", ma2.Int64)
+	}
+	saved["isMenstrualHistoryApplicable"] = false
+	if ima2.Valid {
+		saved["isMenstrualHistoryApplicable"] = ima2.Int64 == 1
+	}
+	saved["numberOfPregnancyToDate"] = ""
+	if g2.Valid {
+		saved["numberOfPregnancyToDate"] = fmt.Sprintf("%d", g2.Int64)
+	}
+	saved["numberOfDeliveryToDate"] = ""
+	if p2.Valid {
+		saved["numberOfDeliveryToDate"] = fmt.Sprintf("%d", p2.Int64)
+	}
+	saved["typeOfDelivery"] = ""
+	if dt2.Valid {
+		saved["typeOfDelivery"] = dt2.String
+	}
+	saved["numberOfFullTermPregnancy"] = ""
+	if ft2.Valid {
+		saved["numberOfFullTermPregnancy"] = fmt.Sprintf("%d", ft2.Int64)
+	}
+	saved["numberOfPrematurePregnancy"] = ""
+	if prem2.Valid {
+		saved["numberOfPrematurePregnancy"] = fmt.Sprintf("%d", prem2.Int64)
+	}
+	saved["numberOfAbortion"] = ""
+	if ab2.Valid {
+		saved["numberOfAbortion"] = fmt.Sprintf("%d", ab2.Int64)
+	}
+	saved["numberOfLivingChildren"] = ""
+	if lc2.Valid {
+		saved["numberOfLivingChildren"] = fmt.Sprintf("%d", lc2.Int64)
+	}
+	saved["pregnancyInducedHypertension"] = false
+	if pih2.Valid {
+		saved["pregnancyInducedHypertension"] = pih2.Int64 == 1
+	}
+	saved["accessToFamilyPlanningCounselling"] = false
+	if hfp2.Valid {
+		saved["accessToFamilyPlanningCounselling"] = hfp2.Int64 == 1
+	}
+	saved["isPregnancyHistoryApplicable"] = false
+	if ipa2.Valid {
+		saved["isPregnancyHistoryApplicable"] = ipa2.Int64 == 1
+	}
+	saved["notes"] = ""
+	if notes2.Valid {
+		saved["notes"] = notes2.String
+	}
+	saved["date_added"] = ""
+	if dateAdded2.Valid {
+		saved["date_added"] = dateAdded2.String
+	}
+	saved["added_by"] = ""
+	if addedBy2.Valid {
+		saved["added_by"] = addedBy2.String
+	}
+
+	log.Printf("saveFemaleHistory: saved data for patno=%s patientID=%s: %+v", patno, patientID, saved)
+	json.NewEncoder(w).Encode(saved)
 }
 
 func getFamilyHistory(w http.ResponseWriter, r *http.Request) {
@@ -1004,6 +1324,40 @@ func createMedHistSummaryTable() {
 		added_by     VARCHAR(50)
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
 	log.Println("✓ patient_medhist table ready")
+}
+
+// createPatientFemaleHistoryTable creates a table to store the Female tab entries per patient.
+// Structured columns are used so individual fields can be queried easily.
+func createPatientFemaleHistoryTable() {
+	db.Exec(`CREATE TABLE IF NOT EXISTS patient_femalehistory (
+		patno VARCHAR(20) NOT NULL PRIMARY KEY,
+		menarche_age INT,
+		last_menstrual DATE,
+		period_duration_days INT,
+		cycle_length_days INT,
+		pads_per_day INT,
+		sexual_onset_age INT,
+		birth_control_used VARCHAR(100),
+		is_menopause TINYINT(1),
+		menopause_age INT,
+		is_menstrual_applicable TINYINT(1),
+
+		gravidity INT,
+		parity INT,
+		delivery_type VARCHAR(32),
+		full_term_pregnancy_count INT,
+		premature_pregnancy_count INT,
+		abortion_count INT,
+		living_children INT,
+		preg_induced_htn TINYINT(1),
+		has_family_planning TINYINT(1),
+		is_preg_history_applicable TINYINT(1),
+
+		notes TEXT,
+		date_added DATETIME,
+		added_by VARCHAR(50)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+	log.Println("✓ patient_femalehistory table ready")
 }
 
 // ensureMedHistColumns — kept as no-op for compatibility
