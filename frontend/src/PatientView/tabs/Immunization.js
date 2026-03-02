@@ -46,8 +46,12 @@ function Immunization({ patientId }) {
     fetchSavedImmunization();
   }, [fetchLibs, fetchSavedImmunization]);
 
-  // Check if item is selected
-  const isChecked = (item) => savedItems.some(s => mapCode(s) === mapCode(item));
+  // Check if item is selected (honor the saved is_checked flag)
+  const isChecked = (item) => {
+    const s = savedItems.find(si => mapCode(si) === mapCode(item));
+    if (!s) return false;
+    return !!(s.is_checked || s.IsChecked || s.checked || s.isChecked);
+  };
 
   // Handle checkbox toggle
   const handleCheckboxChange = (lib, setLib, item) => {
@@ -61,13 +65,47 @@ function Immunization({ patientId }) {
 
     // Update savedItems state
     setSavedItems(prev => {
-      const exists = prev.some(s => mapCode(s) === mapCode(item));
-      if (!exists) {
-        return [...prev, item];
-      } else {
-        return prev.filter(s => mapCode(s) !== mapCode(item));
+      const idx = prev.findIndex(s => mapCode(s) === mapCode(item));
+      if (idx === -1) {
+        // add with checked=true
+        return [...prev, { ...item, is_checked: true }];
       }
+
+      // toggle the is_checked flag on the existing item
+      const updated = [...prev];
+      const cur = updated[idx];
+      const curVal = !!(cur.is_checked || cur.IsChecked || cur.checked || cur.isChecked);
+      updated[idx] = { ...cur, is_checked: !curVal };
+      return updated;
     });
+  };
+
+  // Save current selections to backend
+  const handleSave = async () => {
+    try {
+      // Build payload using the library order so backend can map codes correctly
+      const allLibs = [...childLib, ...youngLib, ...pregLib, ...elderlyLib];
+      const payload = allLibs.map(libItem => {
+        const code = mapCode(libItem);
+        const name = mapName(libItem);
+        const saved = savedItems.find(s => (s.vaccine_code || s.VaccineCode || s.IMM_CODE || s.code) === code);
+        const is_checked = !!(saved && (saved.is_checked || saved.IsChecked || saved.checked || saved.isChecked));
+        return {
+          vaccine_code: code,
+          vaccine_name: name,
+          category: libItem.category || libItem.Category || libItem.grp || '',
+          is_checked,
+        };
+      });
+
+      await axios.post(`/api/patients/${patientId}/immunization`, payload);
+      // Optionally refetch saved items to sync state
+      fetchSavedImmunization();
+      alert('Immunization saved');
+    } catch (err) {
+      console.error('Failed to save immunizations', err);
+      alert('Save failed');
+    }
   };
 
   // Render a library section
@@ -124,6 +162,9 @@ function Immunization({ patientId }) {
                 });
               }}
             ></textarea>
+          </div>
+          <div style={{marginTop:16}}>
+            <button onClick={handleSave}>Save Immunization</button>
           </div>
         </div>
       </div>

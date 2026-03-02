@@ -159,6 +159,8 @@ func main() {
 	// (e.g. "1|0|1|0|0") representing which diseases were checked in the Medical tab.
 	// It is separate from tsekap_tbl_prof_medhist which has FK constraints.
 	createMedHistSummaryTable()
+	// Ensure patient_immunization summary table exists (patno keyed, 1|0 bits)
+	createImmunizationSummaryTable()
 
 	// Setup router
 	router := mux.NewRouter()
@@ -591,14 +593,81 @@ func saveSurgicalHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func getImmunization(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	patientID := mux.Vars(r)["patientId"]
-	rows, _ := db.Query("SELECT id, patient_id, vaccine_code, vaccine_name, category, is_checked, other_description FROM tsekap_tbl_prof_immunization WHERE patient_id = ?", patientID)
-	defer rows.Close()
+
+	// Translate numeric patient ID → case_no (patno)
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		patno = patientID
+	}
+
+	// Build library order: child, young, preg, elderly (preserves positions)
+	type libEntry struct{ Code, Name, Category string }
+	var lib []libEntry
+
+	rows, err := db.Query("SELECT IMM_CODE, IMM_DESC FROM tsekap_lib_immchild ORDER BY IMM_CODE")
+	if err == nil {
+		for rows.Next() {
+			var c, n string
+			rows.Scan(&c, &n)
+			lib = append(lib, libEntry{Code: c, Name: n, Category: "child"})
+		}
+		rows.Close()
+	}
+
+	rows, err = db.Query("SELECT IMM_CODE, IMM_DESC FROM tsekap_lib_immyoungw ORDER BY IMM_CODE")
+	if err == nil {
+		for rows.Next() {
+			var c, n string
+			rows.Scan(&c, &n)
+			lib = append(lib, libEntry{Code: c, Name: n, Category: "young"})
+		}
+		rows.Close()
+	}
+
+	rows, err = db.Query("SELECT IMM_CODE, IMM_DESC FROM tsekap_lib_immpregw ORDER BY IMM_CODE")
+	if err == nil {
+		for rows.Next() {
+			var c, n string
+			rows.Scan(&c, &n)
+			lib = append(lib, libEntry{Code: c, Name: n, Category: "pregnant"})
+		}
+		rows.Close()
+	}
+
+	rows, err = db.Query("SELECT IMM_CODE, IMM_DESC FROM tsekap_lib_immelderly ORDER BY IMM_CODE")
+	if err == nil {
+		for rows.Next() {
+			var c, n string
+			rows.Scan(&c, &n)
+			lib = append(lib, libEntry{Code: c, Name: n, Category: "elderly"})
+		}
+		rows.Close()
+	}
+
+	// Fetch saved pipe-separated 1|0 string for this patient
+	var saved string
+	db.QueryRow("SELECT imm_code FROM patient_immunization WHERE patno = ?", patno).Scan(&saved)
+	bits := []string{}
+	if saved != "" {
+		bits = strings.Split(saved, "|")
+	}
+
+	// Build response
 	var list []ImmunizationItem
-	for rows.Next() {
-		var i ImmunizationItem
-		rows.Scan(&i.ID, &i.PatientID, &i.VaccineCode, &i.VaccineName, &i.Category, &i.IsChecked, &i.OtherDescription)
-		list = append(list, i)
+	for i, e := range lib {
+		isChecked := false
+		if i < len(bits) {
+			isChecked = bits[i] == "1"
+		}
+		list = append(list, ImmunizationItem{
+			VaccineCode: e.Code,
+			VaccineName: e.Name,
+			Category:    e.Category,
+			IsChecked:   isChecked,
+		})
 	}
 	json.NewEncoder(w).Encode(list)
 }
@@ -792,17 +861,101 @@ func getImmElderlyLib(w http.ResponseWriter, r *http.Request) {
 }
 
 func saveImmunization(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	patientID := mux.Vars(r)["patientId"]
+
 	var items []ImmunizationItem
-	json.NewDecoder(r.Body).Decode(&items)
-	db.Exec("DELETE FROM tsekap_tbl_prof_immunization WHERE patient_id = ?", patientID)
-	for _, item := range items {
-		if item.IsChecked {
-			db.Exec("INSERT INTO tsekap_tbl_prof_immunization (patient_id, vaccine_code, vaccine_name, category, is_checked, other_description) VALUES (?, ?, ?, ?, ?, ?)",
-				patientID, item.VaccineCode, item.VaccineName, item.Category, true, item.OtherDescription)
+	if err := json.NewDecoder(r.Body).Decode(&items); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Translate numeric patient ID → case_no (patno)
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		patno = patientID
+	}
+
+	// Rebuild library order (same order as getImmunization)
+	var libOrder []string
+	rows, err := db.Query("SELECT IMM_CODE FROM tsekap_lib_immchild ORDER BY IMM_CODE")
+	if err == nil {
+		for rows.Next() {
+			var c string
+			rows.Scan(&c)
+			libOrder = append(libOrder, c)
+		}
+		rows.Close()
+	}
+	rows, err = db.Query("SELECT IMM_CODE FROM tsekap_lib_immyoungw ORDER BY IMM_CODE")
+	if err == nil {
+		for rows.Next() {
+			var c string
+			rows.Scan(&c)
+			libOrder = append(libOrder, c)
+		}
+		rows.Close()
+	}
+	rows, err = db.Query("SELECT IMM_CODE FROM tsekap_lib_immpregw ORDER BY IMM_CODE")
+	if err == nil {
+		for rows.Next() {
+			var c string
+			rows.Scan(&c)
+			libOrder = append(libOrder, c)
+		}
+		rows.Close()
+	}
+	rows, err = db.Query("SELECT IMM_CODE FROM tsekap_lib_immelderly ORDER BY IMM_CODE")
+	if err == nil {
+		for rows.Next() {
+			var c string
+			rows.Scan(&c)
+			libOrder = append(libOrder, c)
+		}
+		rows.Close()
+	}
+
+	// Map incoming items by code
+	checkedMap := map[string]bool{}
+	for _, it := range items {
+		checkedMap[it.VaccineCode] = it.IsChecked
+	}
+
+	bits := make([]string, len(libOrder))
+	for i, code := range libOrder {
+		if checkedMap[code] {
+			bits[i] = "1"
+		} else {
+			bits[i] = "0"
 		}
 	}
-	json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+	immCode := strings.Join(bits, "|")
+
+	_, execErr := db.Exec(
+		`INSERT INTO patient_immunization (patno, imm_code, date_added, added_by)
+		 VALUES (?, ?, NOW(), 'system')
+		 ON DUPLICATE KEY UPDATE imm_code = VALUES(imm_code), date_added = NOW()`,
+		patno, immCode)
+	if execErr != nil {
+		log.Println("saveImmunization error:", execErr)
+		http.Error(w, execErr.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"message": "Saved", "patno": patno, "imm_code": immCode})
+}
+
+// createImmunizationSummaryTable creates patient_immunization table used to store
+// a pipe-separated 1|0 string keyed by patno (case_no) similar to patient_medhist
+func createImmunizationSummaryTable() {
+	db.Exec(`CREATE TABLE IF NOT EXISTS patient_immunization (
+		patno VARCHAR(20) NOT NULL PRIMARY KEY,
+		imm_code VARCHAR(2000) NOT NULL DEFAULT '',
+		date_added DATETIME,
+		added_by VARCHAR(50)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+	log.Println("✓ patient_immunization table ready")
 }
 
 // ==================== PATIENT HANDLERS ====================
