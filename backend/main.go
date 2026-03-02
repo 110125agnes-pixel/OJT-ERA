@@ -165,6 +165,18 @@ func main() {
 	// Ensure patient_immunization summary table exists (patno keyed, 1|0 bits)
 	createImmunizationSummaryTable()
 
+	// Ensure patient_pe_skin summary table exists (skin findings stored as pipe-separated 1|0)
+	createPatientPeSkinTable()
+
+	// Ensure patient_pe_genitourinary summary table exists (genitourinary findings stored as pipe-separated 1|0)
+	createPatientPeGenitourinaryTable()
+
+	// Ensure patient_pe_digital_rectal summary table exists (digital rectal findings stored as pipe-separated 1|0)
+	createPatientPeDigitalRectalTable()
+
+	// Ensure patient_pe_neuro summary table exists (neurological findings stored as pipe-separated 1|0)
+	createPatientPeNeuroTable()
+
 	// Setup router
 	router := mux.NewRouter()
 
@@ -1341,6 +1353,78 @@ func createFamilyHistSummaryTable() {
 	log.Println("✓ patient_famhist table ready")
 }
 
+// createPatientPeSkinTable auto-creates the patient_pe_skin table on backend startup.
+// Schema design:
+//
+//	patno     - patient's case_no, PRIMARY KEY
+//	skin_code - pipe-separated 0/1 string, one bit per option in tsekap_lib_skin_extremities order
+//	others_text - optional text saved for 'others' option
+//	date_added, added_by
+func createPatientPeSkinTable() {
+	db.Exec(`CREATE TABLE IF NOT EXISTS patient_pe_skin (
+		patno VARCHAR(50) NOT NULL PRIMARY KEY,
+		skin_code VARCHAR(2000) NOT NULL DEFAULT '',
+		others_text TEXT,
+		date_added DATETIME,
+		added_by VARCHAR(50)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+	log.Println("✓ patient_pe_skin table ready")
+}
+
+// createPatientPeGenitourinaryTable auto-creates the patient_pe_genitourinary table on backend startup.
+// Schema design:
+//
+//	patno     - patient's case_no, PRIMARY KEY
+//	gu_code - pipe-separated 0/1 string, one bit per option in tsekap_lib_genitourinary order
+//	others_text - optional text saved for 'others' option
+//	date_added, added_by
+func createPatientPeGenitourinaryTable() {
+	db.Exec(`CREATE TABLE IF NOT EXISTS patient_pe_genitourinary (
+		patno VARCHAR(50) NOT NULL PRIMARY KEY,
+		gu_code VARCHAR(2000) NOT NULL DEFAULT '',
+		others_text TEXT,
+		date_added DATETIME,
+		added_by VARCHAR(50)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+	log.Println("✓ patient_pe_genitourinary table ready")
+}
+
+// createPatientPeDigitalRectalTable auto-creates the patient_pe_digital_rectal table on backend startup.
+// Schema design:
+//
+//	patno     - patient's case_no, PRIMARY KEY
+//	dr_code - pipe-separated 0/1 string, one bit per option in tsekap_lib_digital_rectal order
+//	others_text - optional text saved for 'others' option
+//	date_added, added_by
+func createPatientPeDigitalRectalTable() {
+	db.Exec(`CREATE TABLE IF NOT EXISTS patient_pe_digital_rectal (
+		patno VARCHAR(50) NOT NULL PRIMARY KEY,
+		dr_code VARCHAR(2000) NOT NULL DEFAULT '',
+		others_text TEXT,
+		date_added DATETIME,
+		added_by VARCHAR(50)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+	log.Println("✓ patient_pe_digital_rectal table ready")
+}
+
+// createPatientPeNeuroTable auto-creates the patient_pe_neuro table on backend startup.
+// Schema design:
+//
+//	patno     - patient's case_no, PRIMARY KEY
+//	neuro_code - pipe-separated 0/1 string, one bit per option in tsekap_lib_neuro order
+//	others_text - optional text saved for 'others' option
+//	date_added, added_by
+func createPatientPeNeuroTable() {
+	db.Exec(`CREATE TABLE IF NOT EXISTS patient_pe_neuro (
+		patno VARCHAR(50) NOT NULL PRIMARY KEY,
+		neuro_code VARCHAR(2000) NOT NULL DEFAULT '',
+		others_text TEXT,
+		date_added DATETIME,
+		added_by VARCHAR(50)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+	log.Println("✓ patient_pe_neuro table ready")
+}
+
 // ensureMedHistColumns — kept as no-op for compatibility
 func ensureMedHistColumns() {}
 
@@ -1443,7 +1527,7 @@ type FindingPayload struct {
 func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	patientID := mux.Vars(r)["patientId"]
-
+	// First, load existing rows for non-skin categories
 	rows, err := db.Query(`SELECT id, patient_id, category, finding_code, finding_desc, is_checked, others_text
 		FROM tsekap_tbl_prof_pe_findings WHERE patient_id = ?`, patientID)
 	if err != nil {
@@ -1468,6 +1552,219 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 		rows.Scan(&f.ID, &f.PatientID, &f.Category, &f.FindingCode, &f.FindingDesc, &f.IsChecked, &f.OthersText)
 		list = append(list, f)
 	}
+
+	// Now load skin findings from the summary table (if present), and expand into FindingRow entries
+	// Translate numeric patient ID → case_no (patno)
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		patno = patientID
+	}
+
+	// Load skin library order
+	libRows, libErr := db.Query("SELECT SKIN_ID, SKIN_DESC FROM tsekap_lib_skin_extremities ORDER BY SORT_NO, SKIN_ID")
+	var skinOrder []struct{ ID, Desc string }
+	if libErr == nil {
+		defer libRows.Close()
+		for libRows.Next() {
+			var id, desc string
+			libRows.Scan(&id, &desc)
+			skinOrder = append(skinOrder, struct{ ID, Desc string }{ID: id, Desc: desc})
+		}
+	}
+
+	// Read saved skin bits
+	var saved string
+	var others sql.NullString
+	db.QueryRow("SELECT skin_code, others_text FROM patient_pe_skin WHERE patno = ?", patno).Scan(&saved, &others)
+	skinBits := []string{}
+	if saved != "" {
+		skinBits = strings.Split(saved, "|")
+	}
+
+	// Build skin finding rows using keys that match frontend ('skin_<ID>')
+	for i, s := range skinOrder {
+		isChecked := false
+		if i < len(skinBits) {
+			isChecked = skinBits[i] == "1"
+		}
+		code := "skin_" + s.ID
+		list = append(list, FindingRow{
+			ID:          0,
+			PatientID:   0,
+			Category:    "skin",
+			FindingCode: code,
+			FindingDesc: s.Desc,
+			IsChecked:   isChecked,
+			OthersText:  "",
+		})
+	}
+
+	// If there are saved 'others' text, append an 'others' row
+	if others.Valid && others.String != "" {
+		list = append(list, FindingRow{
+			ID:          0,
+			PatientID:   0,
+			Category:    "skin",
+			FindingCode: "others",
+			FindingDesc: "Others",
+			IsChecked:   true,
+			OthersText:  others.String,
+		})
+	}
+
+	// Now expand Genitourinary summary into finding rows (if present)
+	guLibRows, guErr := db.Query("SELECT GU_ID, GU_DESC FROM tsekap_lib_genitourinary ORDER BY SORT_NO, GU_ID")
+	var guOrder []struct{ ID, Desc string }
+	if guErr == nil {
+		defer guLibRows.Close()
+		for guLibRows.Next() {
+			var id, desc string
+			guLibRows.Scan(&id, &desc)
+			guOrder = append(guOrder, struct{ ID, Desc string }{ID: id, Desc: desc})
+		}
+	}
+
+	// Read saved genitourinary bits
+	var guSaved string
+	var guOthers sql.NullString
+	db.QueryRow("SELECT gu_code, others_text FROM patient_pe_genitourinary WHERE patno = ?", patno).Scan(&guSaved, &guOthers)
+	guBits := []string{}
+	if guSaved != "" {
+		guBits = strings.Split(guSaved, "|")
+	}
+
+	for i, g := range guOrder {
+		isChecked := false
+		if i < len(guBits) {
+			isChecked = guBits[i] == "1"
+		}
+		code := "genitourinary_" + g.ID
+		list = append(list, FindingRow{
+			ID:          0,
+			PatientID:   0,
+			Category:    "genitourinary",
+			FindingCode: code,
+			FindingDesc: g.Desc,
+			IsChecked:   isChecked,
+			OthersText:  "",
+		})
+	}
+
+	if guOthers.Valid && guOthers.String != "" {
+		list = append(list, FindingRow{
+			ID:          0,
+			PatientID:   0,
+			Category:    "genitourinary",
+			FindingCode: "others",
+			FindingDesc: "Others",
+			IsChecked:   true,
+			OthersText:  guOthers.String,
+		})
+	}
+
+	// Now expand Digital Rectal summary into finding rows (if present)
+	drLibRows, drErr := db.Query("SELECT RECTAL_ID, RECTAL_DESC FROM tsekap_lib_digital_rectal ORDER BY SORT_NO, RECTAL_ID")
+	var drOrder []struct{ ID, Desc string }
+	if drErr == nil {
+		defer drLibRows.Close()
+		for drLibRows.Next() {
+			var id, desc string
+			drLibRows.Scan(&id, &desc)
+			drOrder = append(drOrder, struct{ ID, Desc string }{ID: id, Desc: desc})
+		}
+	}
+
+	// Read saved digital rectal bits
+	var drSaved string
+	var drOthers sql.NullString
+	db.QueryRow("SELECT dr_code, others_text FROM patient_pe_digital_rectal WHERE patno = ?", patno).Scan(&drSaved, &drOthers)
+	drBits := []string{}
+	if drSaved != "" {
+		drBits = strings.Split(drSaved, "|")
+	}
+
+	for i, d := range drOrder {
+		isChecked := false
+		if i < len(drBits) {
+			isChecked = drBits[i] == "1"
+		}
+		code := "digitalRectal_" + d.ID
+		list = append(list, FindingRow{
+			ID:          0,
+			PatientID:   0,
+			Category:    "digitalRectal",
+			FindingCode: code,
+			FindingDesc: d.Desc,
+			IsChecked:   isChecked,
+			OthersText:  "",
+		})
+	}
+
+	if drOthers.Valid && drOthers.String != "" {
+		list = append(list, FindingRow{
+			ID:          0,
+			PatientID:   0,
+			Category:    "digitalRectal",
+			FindingCode: "others",
+			FindingDesc: "Others",
+			IsChecked:   true,
+			OthersText:  drOthers.String,
+		})
+	}
+
+	// Now expand Neuro/Neurological summary into finding rows (if present)
+	neuroLibRows, neuroErr := db.Query("SELECT NEURO_ID, NEURO_DESC FROM tsekap_lib_neuro ORDER BY SORT_NO, NEURO_ID")
+	var neuroOrder []struct{ ID, Desc string }
+	if neuroErr == nil {
+		defer neuroLibRows.Close()
+		for neuroLibRows.Next() {
+			var id, desc string
+			neuroLibRows.Scan(&id, &desc)
+			neuroOrder = append(neuroOrder, struct{ ID, Desc string }{ID: id, Desc: desc})
+		}
+	}
+
+	// Read saved neuro bits
+	var neuroSaved string
+	var neuroOthers sql.NullString
+	db.QueryRow("SELECT neuro_code, others_text FROM patient_pe_neuro WHERE patno = ?", patno).Scan(&neuroSaved, &neuroOthers)
+	neuroBits := []string{}
+	if neuroSaved != "" {
+		neuroBits = strings.Split(neuroSaved, "|")
+	}
+
+	for i, n := range neuroOrder {
+		isChecked := false
+		if i < len(neuroBits) {
+			isChecked = neuroBits[i] == "1"
+		}
+		code := "neuro_" + n.ID
+		list = append(list, FindingRow{
+			ID:          0,
+			PatientID:   0,
+			Category:    "neurological",
+			FindingCode: code,
+			FindingDesc: n.Desc,
+			IsChecked:   isChecked,
+			OthersText:  "",
+		})
+	}
+
+	if neuroOthers.Valid && neuroOthers.String != "" {
+		list = append(list, FindingRow{
+			ID:          0,
+			PatientID:   0,
+			Category:    "neurological",
+			FindingCode: "others",
+			FindingDesc: "Others",
+			IsChecked:   true,
+			OthersText:  neuroOthers.String,
+		})
+	}
+
+	// (HEENT expansion removed; HEENT rows are handled via existing tsekap_tbl_prof_pe_findings rows)
+
 	json.NewEncoder(w).Encode(list)
 }
 
@@ -1485,7 +1782,255 @@ func savePhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use DELETE + INSERT for simplicity and reliability
+	// Special-case: if saving skin category, store as a summary bit-string
+	if payload.Category == "skin" {
+		// Translate numeric patient ID → case_no (patno)
+		var patno string
+		db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+		if patno == "" {
+			patno = patientID
+		}
+
+		// Rebuild skin library order
+		libRows, err := db.Query("SELECT SKIN_ID FROM tsekap_lib_skin_extremities ORDER BY SORT_NO, SKIN_ID")
+		if err != nil {
+			log.Println("skin lib query error:", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer libRows.Close()
+		var order []string
+		for libRows.Next() {
+			var id string
+			libRows.Scan(&id)
+			order = append(order, id)
+		}
+
+		// Build lookup map from incoming findings
+		checkedMap := map[string]bool{}
+		var othersText string
+		for _, f := range payload.Findings {
+			if f.FindingCode == "others" {
+				othersText = f.OthersText
+				continue
+			}
+			// incoming finding codes for library items are expected in the form 'skin_<ID>'
+			checkedMap[f.FindingCode] = f.IsChecked
+		}
+
+		// Build bits in library order
+		bits := make([]string, len(order))
+		for i, id := range order {
+			key := "skin_" + id
+			if checkedMap[key] {
+				bits[i] = "1"
+			} else {
+				bits[i] = "0"
+			}
+		}
+		skinCode := strings.Join(bits, "|")
+
+		// UPSERT into patient_pe_skin
+		_, execErr := db.Exec(`INSERT INTO patient_pe_skin (patno, skin_code, others_text, date_added, added_by)
+			VALUES (?, ?, ?, NOW(), 'system')
+			ON DUPLICATE KEY UPDATE skin_code = VALUES(skin_code), others_text = VALUES(others_text), date_added = NOW()`,
+			patno, skinCode, othersText)
+		if execErr != nil {
+			log.Println("savePhysicalExamFindings (skin) error:", execErr)
+			http.Error(w, execErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+		return
+	}
+
+	// Special-case: if saving genitourinary category, store as a summary bit-string
+	if payload.Category == "genitourinary" {
+		// Translate numeric patient ID → case_no (patno)
+		var patno string
+		db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+		if patno == "" {
+			patno = patientID
+		}
+
+		// Rebuild genitourinary library order
+		libRows, err := db.Query("SELECT GU_ID FROM tsekap_lib_genitourinary ORDER BY SORT_NO, GU_ID")
+		if err != nil {
+			log.Println("genitourinary lib query error:", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer libRows.Close()
+		var order []string
+		for libRows.Next() {
+			var id string
+			libRows.Scan(&id)
+			order = append(order, id)
+		}
+
+		// Build lookup map from incoming findings
+		checkedMap := map[string]bool{}
+		var othersText string
+		for _, f := range payload.Findings {
+			if f.FindingCode == "others" {
+				othersText = f.OthersText
+				continue
+			}
+			// incoming finding codes for library items are expected in the form 'genitourinary_<ID>'
+			checkedMap[f.FindingCode] = f.IsChecked
+		}
+
+		// Build bits in library order
+		bits := make([]string, len(order))
+		for i, id := range order {
+			key := "genitourinary_" + id
+			if checkedMap[key] {
+				bits[i] = "1"
+			} else {
+				bits[i] = "0"
+			}
+		}
+		guCode := strings.Join(bits, "|")
+
+		// UPSERT into patient_pe_genitourinary
+		_, execErr := db.Exec(`INSERT INTO patient_pe_genitourinary (patno, gu_code, others_text, date_added, added_by)
+			VALUES (?, ?, ?, NOW(), 'system')
+			ON DUPLICATE KEY UPDATE gu_code = VALUES(gu_code), others_text = VALUES(others_text), date_added = NOW()`,
+			patno, guCode, othersText)
+		if execErr != nil {
+			log.Println("savePhysicalExamFindings (genitourinary) error:", execErr)
+			http.Error(w, execErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+		return
+	}
+
+	// Special-case: if saving digitalRectal category, store as a summary bit-string
+	if payload.Category == "digitalRectal" {
+		// Translate numeric patient ID → case_no (patno)
+		var patno string
+		db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+		if patno == "" {
+			patno = patientID
+		}
+
+		// Rebuild digital rectal library order
+		libRows, err := db.Query("SELECT RECTAL_ID FROM tsekap_lib_digital_rectal ORDER BY SORT_NO, RECTAL_ID")
+		if err != nil {
+			log.Println("digital rectal lib query error:", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer libRows.Close()
+		var order []string
+		for libRows.Next() {
+			var id string
+			libRows.Scan(&id)
+			order = append(order, id)
+		}
+
+		// Build lookup map from incoming findings
+		checkedMap := map[string]bool{}
+		var othersText string
+		for _, f := range payload.Findings {
+			if f.FindingCode == "others" {
+				othersText = f.OthersText
+				continue
+			}
+			// incoming finding codes for library items are expected in the form 'digitalRectal_<ID>'
+			checkedMap[f.FindingCode] = f.IsChecked
+		}
+
+		// Build bits in library order
+		bits := make([]string, len(order))
+		for i, id := range order {
+			key := "digitalRectal_" + id
+			if checkedMap[key] {
+				bits[i] = "1"
+			} else {
+				bits[i] = "0"
+			}
+		}
+		drCode := strings.Join(bits, "|")
+
+		// UPSERT into patient_pe_digital_rectal
+		_, execErr := db.Exec(`INSERT INTO patient_pe_digital_rectal (patno, dr_code, others_text, date_added, added_by)
+			VALUES (?, ?, ?, NOW(), 'system')
+			ON DUPLICATE KEY UPDATE dr_code = VALUES(dr_code), others_text = VALUES(others_text), date_added = NOW()`,
+			patno, drCode, othersText)
+		if execErr != nil {
+			log.Println("savePhysicalExamFindings (digitalRectal) error:", execErr)
+			http.Error(w, execErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+		return
+	}
+
+	// Special-case: if saving neurological category, store as a summary bit-string
+	if payload.Category == "neurological" {
+		// Translate numeric patient ID → case_no (patno)
+		var patno string
+		db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+		if patno == "" {
+			patno = patientID
+		}
+
+		// Rebuild neuro library order
+		libRows, err := db.Query("SELECT NEURO_ID FROM tsekap_lib_neuro ORDER BY SORT_NO, NEURO_ID")
+		if err != nil {
+			log.Println("neuro lib query error:", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer libRows.Close()
+		var order []string
+		for libRows.Next() {
+			var id string
+			libRows.Scan(&id)
+			order = append(order, id)
+		}
+
+		// Build lookup map from incoming findings
+		checkedMap := map[string]bool{}
+		var othersText string
+		for _, f := range payload.Findings {
+			if f.FindingCode == "others" {
+				othersText = f.OthersText
+				continue
+			}
+			// incoming finding codes for library items are expected in the form 'neuro_<ID>'
+			checkedMap[f.FindingCode] = f.IsChecked
+		}
+
+		// Build bits in library order
+		bits := make([]string, len(order))
+		for i, id := range order {
+			key := "neuro_" + id
+			if checkedMap[key] {
+				bits[i] = "1"
+			} else {
+				bits[i] = "0"
+			}
+		}
+		neuroCode := strings.Join(bits, "|")
+
+		// UPSERT into patient_pe_neuro
+		_, execErr := db.Exec(`INSERT INTO patient_pe_neuro (patno, neuro_code, others_text, date_added, added_by)
+			VALUES (?, ?, ?, NOW(), 'system')
+			ON DUPLICATE KEY UPDATE neuro_code = VALUES(neuro_code), others_text = VALUES(others_text), date_added = NOW()`,
+			patno, neuroCode, othersText)
+		if execErr != nil {
+			log.Println("savePhysicalExamFindings (neurological) error:", execErr)
+			http.Error(w, execErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+		return
+	}
+
+	// Default behaviour: Use DELETE + INSERT for simplicity and reliability
 	_, err := db.Exec(`DELETE FROM tsekap_tbl_prof_pe_findings WHERE patient_id = ? AND category = ?`,
 		patientID, payload.Category)
 	if err != nil {
