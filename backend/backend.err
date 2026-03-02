@@ -1,0 +1,88 @@
+2026/03/02 17:15:38 ✓ Successfully connected to konsulta database!
+2026/03/02 17:15:38 ✓ Physical exam tables ready
+2026/03/02 17:15:38 ✓ patient_medhist table ready
+2026/03/02 17:15:38 ✓ patient_femalehistory table ready
+2026/03/02 17:15:38 🚀 Server starting on http://localhost:8080
+2026/03/02 17:20:23 http: panic serving [::1]:59390: runtime error: invalid memory address or nil pointer dereference
+goroutine 85 [running]:
+net/http.(*conn).serve.func1()
+	C:/Program Files (x86)/Go/src/net/http/server.go:1947 +0xd4
+panic({0x57f980, 0x84c5f8})
+	C:/Program Files (x86)/Go/src/runtime/panic.go:792 +0xf6
+database/sql.(*Rows).closemuRUnlockIfHeldByScan(...)
+	C:/Program Files (x86)/Go/src/database/sql/sql.go:3410
+database/sql.(*Rows).Close(0x0)
+	C:/Program Files (x86)/Go/src/database/sql/sql.go:3437 +0x17
+panic({0x57f980, 0x84c5f8})
+	C:/Program Files (x86)/Go/src/runtime/panic.go:792 +0xf6
+database/sql.(*Rows).closemuRUnlockIfHeldByScan(...)
+	C:/Program Files (x86)/Go/src/database/sql/sql.go:3410
+database/sql.(*Rows).Next(0x0)
+	C:/Program Files (x86)/Go/src/database/sql/sql.go:3033 +0x1b
+main.getFamilyHistory({0x646e0c, 0x1518828}, 0x1507b88)
+	C:/Users/agadk/OJT-ERA/backend/main.go:864 +0x159
+net/http.HandlerFunc.ServeHTTP(0x5dd2a4, {0x646e0c, 0x1518828}, 0x1507b88)
+	C:/Program Files (x86)/Go/src/net/http/server.go:2294 +0x32
+github.com/gorilla/mux.(*Router).ServeHTTP(0x158a060, {0x646e0c, 0x1518828}, 0x1507978)
+	C:/Users/agadk/go/pkg/mod/github.com/gorilla/mux@v1.8.1/mux.go:212 +0x1e5
+main.main.(*Cors).Handler.func2({0x646e0c, 0x1518828}, 0x1507978)
+	C:/Users/agadk/go/pkg/mod/github.com/rs/cors@v1.11.1/cors.go:289 +0x1c7
+net/http.HandlerFunc.ServeHTTP(0x1589360, {0x646e0c, 0x1518828}, 0x1507978)
+	C:/Program Files (x86)/Go/src/net/http/server.go:2294 +0x32
+net/http.serverHandler.ServeHTTP({0x15c8168}, {0x646e0c, 0x1518828}, 0x1507978)
+	C:/Program Files (x86)/Go/src/net/http/server.go:3301 +0x97
+net/http.(*conn).serve(0x14bc600, {0x647068, 0x15b7e60})
+	C:/Program Files (x86)/Go/src/net/http/server.go:2102 +0x67e
+created by net/http.(*Server).Serve in goroutine 1
+	C:/Program Files (x86)/Go/src/net/http/server.go:3454 +0x41a
+2026/03/02 17:20:23 http: panic serving [::1]:55159: runtime error: invalid memory address or nil pointer dereference
+goroutine 64 [running]:
+net/http.(*conn).serve.func1()
+	C:/Program Files (x86)/Go/src/net/http/server.go:1947 +0xd4
+panic({0x57f980, 0x84c5f8})
+	C:/Program Files (x86)/Go/src/runtime/panic.go:792 +0xf6
+database/sql.(*Rows).closemuRUnlockIfHeldByScan(...)
+	C:/Program Files (x86)/Go/src/database/sql/sql.go:3410
+database/sql.(*Rows).Close(0x0)
+	C:/Program Files (x86)/Go/src/database/sql/sql.go:3437 +0x17
+panic({0x57f980, 0x84c5f8})
+	C:/Program Files (x86)/Go/src/runtime/panic.go:792 +0xf6
+database/sql.(*Rows).closemuRUnlockIfHeldByScan(...)
+	C:/Program Files (x86)/Go/src/database/sql/sql.go:3410
+database/sql.(*Rows).Next(0x0)
+	C:/Program Files (x86)/Go/src/database/sql/sql.go:3033 +0x1b
+main.getFamilyHistory({0x646e0c, 0x15b0968}, 0x16ad348)
+	C:/Users/agadk/OJT-ERA/backend/main.go:864 +0x159
+net/http.HandlerFunc.ServeHTTP(0x5dd2a4, {0x646e0c, 0x15b0968}, 0x16ad348)
+	C:/Program Files (x86)/Go/src/net/http/server.go:2294 +0x32
+github.com/gorilla/mux.(*Router).ServeHTTP(0x158a060, {0x646e0c, 0x15b0968}, 0x14d86e8)
+	C:/Users/agadk/go/pkg/mod/github.com/gorilla/mux@v1.8.1/mux.go:212 +0x1e5
+main.main.(*Cors).Handler.func2({0x646e0c, 0x15b0968}, 0x14d86e8)
+	C:/Users/agadk/go/pkg/mod/github.com/rs/cors@v1.11.1/cors.go:289 +0x1c7
+net/http.HandlerFunc.ServeHTTP(0x1589360, {0x646e0c, 0x15b0968}, 0x14d86e8)
+	C:/Program Files (x86)/Go/src/net/http/server.go:2294 +0x32
+net/http.serverHandler.ServeHTTP({0x15c8168}, {0x646e0c, 0x15b0968}, 0x14d86e8)
+	C:/Program Files (x86)/Go/src/net/http/server.go:3301 +0x97
+net/http.(*conn).serve(0x145ca80, {0x647068, 0x15b7e60})
+	C:/Program Files (x86)/Go/src/net/http/server.go:2102 +0x67e
+created by net/http.(*Server).Serve in goroutine 1
+	C:/Program Files (x86)/Go/src/net/http/server.go:3454 +0x41a
+2026/03/02 17:20:24 getFemaleHistory: no row found for patno=C2026-00001 (patientID=19)
+2026/03/02 17:20:24 getFemaleHistory: no row found for patno=C2026-00001 (patientID=19)
+2026/03/02 17:20:27 getFemaleHistory: no row found for patno=C2026-00001 (patientID=19)
+2026/03/02 17:20:27 getFemaleHistory: no row found for patno=C2026-00001 (patientID=19)
+2026/03/02 17:20:28 saveFemaleHistory: received payload for patientID=19 patno=C2026-00001: map[accessToFamilyPlanningCounselling:false ageOfFirstMenstruation:8 ageOfMenopause: birthControlMethod: dateOfLastMenstrualPeriod: durationOfMenstrualPeriod: intervalCycleOfMenstruation: isMenopause:false isMenstrualHistoryApplicable:false isPregnancyHistoryApplicable:false numberOfAbortion: numberOfDeliveryToDate: numberOfFullTermPregnancy: numberOfLivingChildren: numberOfPadsPerDay: numberOfPregnancyToDate: numberOfPrematurePregnancy: onsetOfSexualIntercourse: pregnancyInducedHypertension:false typeOfDelivery:]
+2026/03/02 17:20:28 saveFemaleHistory error: Error 1292 (22007): Incorrect date value: '' for column 'last_menstrual' at row 1
+2026/03/02 17:20:32 saveFemaleHistory: received payload for patientID=19 patno=C2026-00001: map[accessToFamilyPlanningCounselling:false ageOfFirstMenstruation:8 ageOfMenopause: birthControlMethod: dateOfLastMenstrualPeriod:2026-03-03 durationOfMenstrualPeriod: intervalCycleOfMenstruation: isMenopause:false isMenstrualHistoryApplicable:false isPregnancyHistoryApplicable:false numberOfAbortion: numberOfDeliveryToDate: numberOfFullTermPregnancy: numberOfLivingChildren: numberOfPadsPerDay: numberOfPregnancyToDate: numberOfPrematurePregnancy: onsetOfSexualIntercourse: pregnancyInducedHypertension:false typeOfDelivery:]
+2026/03/02 17:20:32 saveFemaleHistory: saved data for patno=C2026-00001 patientID=19: map[accessToFamilyPlanningCounselling:false added_by:system ageOfFirstMenstruation:8 ageOfMenopause: birthControlMethod: dateOfLastMenstrualPeriod:2026-03-03T00:00:00Z date_added:2026-03-02T17:20:32Z durationOfMenstrualPeriod: intervalCycleOfMenstruation: isMenopause:false isMenstrualHistoryApplicable:false isPregnancyHistoryApplicable:false notes: numberOfAbortion: numberOfDeliveryToDate: numberOfFullTermPregnancy: numberOfLivingChildren: numberOfPadsPerDay: numberOfPregnancyToDate: numberOfPrematurePregnancy: onsetOfSexualIntercourse: pregnancyInducedHypertension:false typeOfDelivery:]
+2026/03/02 17:20:34 saveFemaleHistory: received payload for patientID=19 patno=C2026-00001: map[accessToFamilyPlanningCounselling:false added_by:system ageOfFirstMenstruation:8 ageOfMenopause: birthControlMethod: dateOfLastMenstrualPeriod:2026-03-03T00:00:00Z date_added:2026-03-02T17:20:32Z durationOfMenstrualPeriod:1 intervalCycleOfMenstruation: isMenopause:false isMenstrualHistoryApplicable:false isPregnancyHistoryApplicable:false notes: numberOfAbortion: numberOfDeliveryToDate: numberOfFullTermPregnancy: numberOfLivingChildren: numberOfPadsPerDay: numberOfPregnancyToDate: numberOfPrematurePregnancy: onsetOfSexualIntercourse: pregnancyInducedHypertension:false typeOfDelivery:]
+2026/03/02 17:20:34 saveFemaleHistory error: Error 1292 (22007): Incorrect date value: '2026-03-03T00:00:00Z' for column 'last_menstrual' at row 1
+2026/03/02 17:20:40 saveFemaleHistory: received payload for patientID=19 patno=C2026-00001: map[accessToFamilyPlanningCounselling:false added_by:system ageOfFirstMenstruation:10 ageOfMenopause: birthControlMethod: dateOfLastMenstrualPeriod:2026-03-03T00:00:00Z date_added:2026-03-02T17:20:32Z durationOfMenstrualPeriod:1 intervalCycleOfMenstruation: isMenopause:false isMenstrualHistoryApplicable:false isPregnancyHistoryApplicable:false notes: numberOfAbortion: numberOfDeliveryToDate: numberOfFullTermPregnancy: numberOfLivingChildren: numberOfPadsPerDay: numberOfPregnancyToDate: numberOfPrematurePregnancy: onsetOfSexualIntercourse: pregnancyInducedHypertension:false typeOfDelivery:]
+2026/03/02 17:20:40 saveFemaleHistory error: Error 1292 (22007): Incorrect date value: '2026-03-03T00:00:00Z' for column 'last_menstrual' at row 1
+2026/03/02 17:28:33 getFemaleHistory: no row found for patno=1 (patientID=1)
+2026/03/02 17:30:41 getFemaleHistory: returning data for patno=C2026-00001 patientID=19: map[accessToFamilyPlanningCounselling:false added_by:system ageOfFirstMenstruation:8 birthControlMethod: dateOfLastMenstrualPeriod:2026-03-03T00:00:00Z date_added:2026-03-02T17:20:32Z isMenopause:false isMenstrualHistoryApplicable:false isPregnancyHistoryApplicable:false notes: pregnancyInducedHypertension:false typeOfDelivery:]
+2026/03/02 17:32:06 getFemaleHistory: returning data for patno=C2026-00001 patientID=19: map[accessToFamilyPlanningCounselling:false added_by:system ageOfFirstMenstruation:8 birthControlMethod: dateOfLastMenstrualPeriod:2026-03-03T00:00:00Z date_added:2026-03-02T17:20:32Z isMenopause:false isMenstrualHistoryApplicable:false isPregnancyHistoryApplicable:false notes: pregnancyInducedHypertension:false typeOfDelivery:]
+2026/03/02 17:32:06 getFemaleHistory: returning data for patno=C2026-00001 patientID=19: map[accessToFamilyPlanningCounselling:false added_by:system ageOfFirstMenstruation:8 birthControlMethod: dateOfLastMenstrualPeriod:2026-03-03T00:00:00Z date_added:2026-03-02T17:20:32Z isMenopause:false isMenstrualHistoryApplicable:false isPregnancyHistoryApplicable:false notes: pregnancyInducedHypertension:false typeOfDelivery:]
+2026/03/02 17:32:17 getFemaleHistory: returning data for patno=C2026-00001 patientID=19: map[accessToFamilyPlanningCounselling:false added_by:system ageOfFirstMenstruation:8 birthControlMethod: dateOfLastMenstrualPeriod:2026-03-03T00:00:00Z date_added:2026-03-02T17:20:32Z isMenopause:false isMenstrualHistoryApplicable:false isPregnancyHistoryApplicable:false notes: pregnancyInducedHypertension:false typeOfDelivery:]
+2026/03/02 17:32:17 getFemaleHistory: returning data for patno=C2026-00001 patientID=19: map[accessToFamilyPlanningCounselling:false added_by:system ageOfFirstMenstruation:8 birthControlMethod: dateOfLastMenstrualPeriod:2026-03-03T00:00:00Z date_added:2026-03-02T17:20:32Z isMenopause:false isMenstrualHistoryApplicable:false isPregnancyHistoryApplicable:false notes: pregnancyInducedHypertension:false typeOfDelivery:]
+exit status 0xffffffff

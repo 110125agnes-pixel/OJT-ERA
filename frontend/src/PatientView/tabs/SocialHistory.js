@@ -1,299 +1,202 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 import './SocialHistory.css';
 
-const SocialHistory = ({ patientId, onClose }) => {
-    const [socialHistory, setSocialHistory] = useState({
-        is_patient_smoker: 'No',
-        cigarette_packs_per_year: 0,
-        is_alcohol_drinker: 'No',
-        bottles_per_day: 0,
-        is_illicit_drug_user: 'No',
-        is_sexually_active: 'No'
+// SocialHistory tab — 6 questions about smoking, alcohol, drug use, and sexual activity.
+// Purpose:
+//   - Provide a compact UI for collecting a patient's social history (smoking, alcohol, drugs, sexual activity).
+//   - Persist every change immediately to the backend so the UI and DB stay in sync.
+// Uses:
+//   - GET /api/patients/{patientId}/social-history to load saved data (reads from `patient_socialhistory`).
+//   - POST /api/patients/{patientId}/social-history to save changes (handler upserts into `patient_socialhistory`).
+// Design notes:
+//   - The component is data-driven: `QUESTIONS` defines fields visible in the UI. This avoids duplicated JSX
+//     and makes adding/removing fields a single change in the config.
+//   - Immediate-save behavior matches `FemaleHistory` and `MedicalHistory` components (useCallback + setState then POST).
+
+// QUESTIONS — defines all social history fields in a single place.
+// Purpose and usage:
+//   - Purpose: single source of truth for field metadata (key, label, type, options). Avoids hardcoding inputs.
+//   - Usage: the render loop maps over this array to produce radio groups or selects. Keys must match backend columns.
+//   - To add a field: add a new object with `key`, `label`, `type` and `options` (ensure `key` exists in DB/handler).
+const QUESTIONS = [
+  {
+    key: 'is_patient_smoker',
+    label: '1. Is Patient a Smoker',
+    type: 'radio',
+    options: [
+      { value: 'Yes', label: 'Yes' },
+      { value: 'No',  label: 'No'  },
+      { value: 'Quit', label: 'Quit' },
+    ],
+  },
+  {
+    key: 'cigarette_packs_per_year',
+    label: '2. Number of Cigarette Pack Consumed per Year',
+    type: 'select',
+    options: [0, 1, 2, 3, 4, 5, 10, 20, 30].map(n => ({ value: n, label: String(n) }))
+      .concat([{ value: 50, label: '50+' }]),
+  },
+  {
+    key: 'is_alcohol_drinker',
+    label: '3. Is Patient an Alcohol Drinker',
+    type: 'radio',
+    options: [
+      { value: 'Yes',  label: 'Yes'  },
+      { value: 'No',   label: 'No'   },
+      { value: 'Quit', label: 'Quit' },
+    ],
+  },
+  {
+    key: 'bottles_per_day',
+    label: '4. Number of bottles consumed per day',
+    type: 'select',
+    options: [0, 1, 2, 3, 4, 5].map(n => ({ value: n, label: String(n) }))
+      .concat([{ value: 10, label: '10+' }]),
+  },
+  {
+    key: 'is_illicit_drug_user',
+    label: '5. Is patient an illicit Drug User',
+    type: 'radio',
+    options: [
+      { value: 'Yes', label: 'Yes' },
+      { value: 'No',  label: 'No'  },
+    ],
+  },
+  {
+    key: 'is_sexually_active',
+    label: '6. Is patient Sexually Active',
+    type: 'radio',
+    options: [
+      { value: 'Yes', label: 'Yes' },
+      { value: 'No',  label: 'No'  },
+    ],
+  },
+];
+
+// DEFAULT_STATE — derived from `QUESTIONS` so initial values remain consistent when fields change.
+// Purpose:
+//   - Ensures component state always contains the keys expected by the backend when loading/saving.
+//   - For `select` fields we set a numeric default (0). For radio fields we default to 'No'.
+// Note: if backend returns different default semantics, adjust this generation accordingly.
+const DEFAULT_STATE = Object.fromEntries(
+  QUESTIONS.map((q) => [q.key, q.type === 'select' ? 0 : 'No'])
+);
+
+function SocialHistory({ patientId }) {
+  // socialHistory: mirrors patient_socialhistory columns via backend JSON tags
+  const [socialHistory, setSocialHistory] = useState(DEFAULT_STATE);
+
+  // fetchSocialHistory — loads saved values from backend on mount / patientId change.
+  // Purpose:
+  //   - Query server for previously saved `patient_socialhistory` row for the patient and merge into local state.
+  //   - Keep UI authoritative values coming from the database (server is source of truth).
+  // Endpoint: GET /api/patients/{patientId}/social-history
+  const fetchSocialHistory = useCallback(async () => {
+    if (!patientId) return;
+    try {
+      const res = await axios.get(`/api/patients/${patientId}/social-history`);
+      if (res.data && Object.keys(res.data).length > 0) {
+        setSocialHistory({ ...DEFAULT_STATE, ...res.data });
+      }
+    } catch (err) {
+      // 404 means no record yet — keep defaults
+      if (err.response?.status !== 404) {
+        console.error('Failed to load social history', err);
+      }
+    }
+  }, [patientId]);
+
+  useEffect(() => {
+    fetchSocialHistory();
+  }, [fetchSocialHistory]);
+
+  // saveSocialHistory — POSTs current state to backend immediately after every change.
+  // Purpose:
+  //   - Persist the full socialHistory object so the backend can upsert a single row for the patient.
+  //   - Backend uses `patno` (case_no) as primary key and `ON DUPLICATE KEY UPDATE` to replace values.
+  // Endpoint: POST /api/patients/{patientId}/social-history
+  const saveSocialHistory = useCallback(async (next) => {
+    if (!patientId) return;
+    try {
+      const res = await axios.post(`/api/patients/${patientId}/social-history`, {
+        patient_id: parseInt(patientId),
+        ...next,
+      });
+      if (res.data && Object.keys(res.data).length > 0) {
+        setSocialHistory({ ...DEFAULT_STATE, ...res.data });
+      }
+    } catch (err) {
+      console.error('Failed to save social history', err);
+    }
+  }, [patientId]);
+
+  // handleChange — updates local state and immediately persists to DB.
+  // Purpose:
+  //   - Provide a single handler used by all inputs; it normalizes values and triggers `saveSocialHistory`.
+  // Usage notes:
+  //   - `type === 'select'` values are converted to integers before saving because DB columns are numeric.
+  //   - The `saveSocialHistory` call sends the complete object so the backend has full context.
+  const handleChange = useCallback((key, value, type) => {
+    const parsed = type === 'select' ? parseInt(value) : value;
+    setSocialHistory((prev) => {
+      const next = { ...prev, [key]: parsed };
+      saveSocialHistory(next);
+      return next;
     });
-    const [loading, setLoading] = useState(false);
-    const [message, setMessage] = useState('');
-    const [hasExistingData, setHasExistingData] = useState(false);
+  }, [saveSocialHistory]);
 
-    useEffect(() => {
-        console.log('SocialHistory component - patientId:', patientId);
-        if (patientId) {
-            fetchSocialHistory();
-        } else {
-            console.warn('SocialHistory: No patientId provided');
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [patientId]);
+  return (
+    <div className="medical-content">
+      <div className="social-history-section">
+        <h3>Social History</h3>
 
-    const fetchSocialHistory = async () => {
-        try {
-            const response = await fetch(`http://localhost:8080/api/patients/${patientId}/social-history`);
-            if (response.ok) {
-                const data = await response.json();
-                setSocialHistory(data);
-                setHasExistingData(true);
-                setMessage('Existing social history loaded');
-                setTimeout(() => setMessage(''), 3000);
-            }
-        } catch (error) {
-            console.log('No existing social history found');
-            setHasExistingData(false);
-        }
-    };
+        <div className="social-history-questions">
+          {/* Rendered from QUESTIONS config — no hardcoded JSX per question */}
+          {/* Render notes:
+              - Each question maps to a backend column named by `key`.
+              - Inputs bind to `socialHistory[key]` so loaded values persist through re-renders.
+              - This section intentionally contains no business logic; all logic lives in handlers above.
+          */}
+          {QUESTIONS.map((q) => (
+            <div key={q.key} className="question-group">
+              <label className="question-label">{q.label}</label>
 
-    const handleInputChange = (e) => {
-        const { name, value } = e.target;
-        setSocialHistory(prev => ({
-            ...prev,
-            [name]: value
-        }));
-    };
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        
-        if (!patientId) {
-            setMessage('Error: No patient ID provided');
-            console.error('No patientId available');
-            return;
-        }
-
-        setLoading(true);
-        setMessage('');
-
-        console.log('Saving social history for patient:', patientId);
-        console.log('Data to save:', socialHistory);
-
-        try {
-            const response = await fetch(`http://localhost:8080/api/patients/${patientId}/social-history`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    patient_id: parseInt(patientId),
-                    ...socialHistory
-                }),
-            });
-
-            if (response.ok) {
-                const savedData = await response.json();
-                console.log('Social history saved successfully:', savedData);
-                setHasExistingData(true);
-                setMessage('Social history saved successfully!');
-                setTimeout(() => setMessage(''), 3000);
-            } else {
-                const errorData = await response.text();
-                console.error('Error response:', errorData);
-                setMessage('Error saving social history: ' + errorData);
-            }
-        } catch (error) {
-            console.error('Error saving social history:', error);
-            setMessage('Error: ' + error.message);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <div className="medical-content">
-            <form onSubmit={handleSubmit} className="social-history-section">
-                <h3>Social History</h3>
-
-                {message && (
-                    <div className={`message ${message.includes('Error') ? 'error-message' : 'success-message'}`}>
-                        {message}
-                    </div>
-                )}
-
-                <div className="social-history-questions">
-                    {/* Question 1: Is Patient a Smoker */}
-                    <div className="question-group">
-                        <label className="question-label">1. Is Patient a Smoker</label>
-                        <div className="radio-group">
-                            <label className="radio-option">
-                                <input
-                                    type="radio"
-                                    name="is_patient_smoker"
-                                    value="Yes"
-                                    checked={socialHistory.is_patient_smoker === 'Yes'}
-                                    onChange={handleInputChange}
-                                />
-                                Yes
-                            </label>
-                            <label className="radio-option">
-                                <input
-                                    type="radio"
-                                    name="is_patient_smoker"
-                                    value="No"
-                                    checked={socialHistory.is_patient_smoker === 'No'}
-                                    onChange={handleInputChange}
-                                />
-                                No
-                            </label>
-                            <label className="radio-option">
-                                <input
-                                    type="radio"
-                                    name="is_patient_smoker"
-                                    value="Quit"
-                                    checked={socialHistory.is_patient_smoker === 'Quit'}
-                                    onChange={handleInputChange}
-                                />
-                                Quit
-                            </label>
-                        </div>
-                    </div>
-
-                    {/* Question 2: Number of Cigarette Pack Consumed per Year */}
-                    <div className="question-group">
-                        <label className="question-label">2. Number of Cigarette Pack Consumed per Year</label>
-                        <select
-                            name="cigarette_packs_per_year"
-                            value={socialHistory.cigarette_packs_per_year}
-                            onChange={handleInputChange}
-                            className="select-input"
-                        >
-                            <option value="0">0</option>
-                            <option value="1">1</option>
-                            <option value="2">2</option>
-                            <option value="3">3</option>
-                            <option value="4">4</option>
-                            <option value="5">5</option>
-                            <option value="10">10</option>
-                            <option value="20">20</option>
-                            <option value="30">30</option>
-                            <option value="50">50+</option>
-                        </select>
-                    </div>
-
-                    {/* Question 3: Is Patient an Alcohol Drinker */}
-                    <div className="question-group">
-                        <label className="question-label">3. Is Patient an Alcohol Drinker</label>
-                        <div className="radio-group">
-                            <label className="radio-option">
-                                <input
-                                    type="radio"
-                                    name="is_alcohol_drinker"
-                                    value="Yes"
-                                    checked={socialHistory.is_alcohol_drinker === 'Yes'}
-                                    onChange={handleInputChange}
-                                />
-                                Yes
-                            </label>
-                            <label className="radio-option">
-                                <input
-                                    type="radio"
-                                    name="is_alcohol_drinker"
-                                    value="No"
-                                    checked={socialHistory.is_alcohol_drinker === 'No'}
-                                    onChange={handleInputChange}
-                                />
-                                No
-                            </label>
-                            <label className="radio-option">
-                                <input
-                                    type="radio"
-                                    name="is_alcohol_drinker"
-                                    value="Quit"
-                                    checked={socialHistory.is_alcohol_drinker === 'Quit'}
-                                    onChange={handleInputChange}
-                                />
-                                Quit
-                            </label>
-                        </div>
-                    </div>
-
-                    {/* Question 4: Number of bottles consumed per day */}
-                    <div className="question-group">
-                        <label className="question-label">4. Number of bottles consumed per day</label>
-                        <select
-                            name="bottles_per_day"
-                            value={socialHistory.bottles_per_day}
-                            onChange={handleInputChange}
-                            className="select-input"
-                        >
-                            <option value="0">0</option>
-                            <option value="1">1</option>
-                            <option value="2">2</option>
-                            <option value="3">3</option>
-                            <option value="4">4</option>
-                            <option value="5">5</option>
-                            <option value="10">10+</option>
-                        </select>
-                    </div>
-
-                    {/* Question 5: Is patient an illicit Drug User */}
-                    <div className="question-group">
-                        <label className="question-label">5. Is patient an illicit Drug User</label>
-                        <div className="radio-group">
-                            <label className="radio-option">
-                                <input
-                                    type="radio"
-                                    name="is_illicit_drug_user"
-                                    value="Yes"
-                                    checked={socialHistory.is_illicit_drug_user === 'Yes'}
-                                    onChange={handleInputChange}
-                                />
-                                Yes
-                            </label>
-                            <label className="radio-option">
-                                <input
-                                    type="radio"
-                                    name="is_illicit_drug_user"
-                                    value="No"
-                                    checked={socialHistory.is_illicit_drug_user === 'No'}
-                                    onChange={handleInputChange}
-                                />
-                                No
-                            </label>
-                        </div>
-                    </div>
-
-                    {/* Question 6: Is patient Sexually Active */}
-                    <div className="question-group">
-                        <label className="question-label">6. Is patient Sexually Active</label>
-                        <div className="radio-group">
-                            <label className="radio-option">
-                                <input
-                                    type="radio"
-                                    name="is_sexually_active"
-                                    value="Yes"
-                                    checked={socialHistory.is_sexually_active === 'Yes'}
-                                    onChange={handleInputChange}
-                                />
-                                Yes
-                            </label>
-                            <label className="radio-option">
-                                <input
-                                    type="radio"
-                                    name="is_sexually_active"
-                                    value="No"
-                                    checked={socialHistory.is_sexually_active === 'No'}
-                                    onChange={handleInputChange}
-                                />
-                                No
-                            </label>
-                        </div>
-                    </div>
+              {q.type === 'radio' && (
+                <div className="radio-group">
+                  {q.options.map((opt) => (
+                    <label key={opt.value} className="radio-option">
+                      <input
+                        type="radio"
+                        name={q.key}
+                        value={opt.value}
+                        checked={socialHistory[q.key] === opt.value}
+                        onChange={(e) => handleChange(q.key, e.target.value, 'radio')}
+                      />
+                      {opt.label}
+                    </label>
+                  ))}
                 </div>
+              )}
 
-                {/* Form Actions */}
-                <div className="form-actions">
-                    {hasExistingData && (
-                        <span className="existing-data-indicator">
-                            ✓ Has existing data
-                        </span>
-                    )}
-                    <button 
-                        type="submit" 
-                        className="save-button"
-                        disabled={loading}
-                    >
-                        {loading ? 'Saving...' : (hasExistingData ? 'Update Social History' : 'Save Social History')}
-                    </button>
-                </div>
-            </form>
+              {q.type === 'select' && (
+                <select
+                  name={q.key}
+                  value={socialHistory[q.key]}
+                  onChange={(e) => handleChange(q.key, e.target.value, 'select')}
+                  className="select-input"
+                >
+                  {q.options.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          ))}
         </div>
-    );
-};
+      </div>
+    </div>
+  );
+}
 
 export default SocialHistory;
