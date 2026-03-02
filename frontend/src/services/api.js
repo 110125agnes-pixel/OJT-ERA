@@ -2,6 +2,13 @@ import axios from 'axios';
 
 const API_BASE_URL = '/api';
 
+export const authService = {
+  signup: async (payload) => {
+    const response = await axios.post(`${API_BASE_URL}/auth/signup`, payload);
+    return response.data;
+  }
+};
+
 // Item API service
 export const itemService = {
   // Get all items
@@ -58,6 +65,15 @@ export const inventoryService = {
   // Delete an inventory item
   deleteInventoryItem: async (id) => {
     const response = await axios.delete(`${API_BASE_URL}/inventory/${id}`);
+    return response.data;
+  }
+};
+
+// Abdomen API service
+export const abdomenService = {
+  // Get all abdomen options
+  getAllAbdomens: async () => {
+    const response = await axios.get(`${API_BASE_URL}/abdomens`);
     return response.data;
   }
 };
