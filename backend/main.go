@@ -154,6 +154,12 @@ func main() {
 	// Ensure physical exam tables exist
 	createPhysicalExamTables()
 
+	// Ensure patient_medhist summary table exists.
+	// This table stores one row per patient with a pipe-separated 0/1 string
+	// (e.g. "1|0|1|0|0") representing which diseases were checked in the Medical tab.
+	// It is separate from tsekap_tbl_prof_medhist which has FK constraints.
+	createMedHistSummaryTable()
+
 	// Setup router
 	router := mux.NewRouter()
 
@@ -400,31 +406,134 @@ func savePertinentPhysicalExam(w http.ResponseWriter, r *http.Request) {
 
 // ==================== CHECKBOX HISTORY HANDLERS ====================
 
+// getMedicalHistory handles GET /api/patients/{patientId}/medical-history
+// It returns the full disease list from tsekap_lib_mdiseases, each with is_checked = true/false
+// based on the saved 1|0 string in patient_medhist for this patient.
 func getMedicalHistory(w http.ResponseWriter, r *http.Request) {
-	patientID := mux.Vars(r)["patientId"]
-	rows, _ := db.Query("SELECT id, patient_id, disease_code, disease_name, is_checked FROM tsekap_tbl_prof_medhist WHERE patient_id = ?", patientID)
-	defer rows.Close()
+	w.Header().Set("Content-Type", "application/json")
+	patientID := mux.Vars(r)["patientId"] // numeric ID from URL e.g. /api/patients/5/medical-history
+
+	// Translate numeric patient ID → case_no (e.g. "C2026-00001") used as patno key
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		patno = patientID // fallback: use numeric ID if case_no not set
+	}
+
+	// Load all diseases from the library in sorted order — this defines the bit positions
+	// Position 0 = first disease (lowest code), position N = last disease
+	libRows, err := db.Query("SELECT mdisease_code, mdisease_desc FROM tsekap_lib_mdiseases ORDER BY mdisease_code")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer libRows.Close()
+
+	type libEntry struct{ Code, Desc string }
+	var lib []libEntry
+	for libRows.Next() {
+		var e libEntry
+		libRows.Scan(&e.Code, &e.Desc)
+		lib = append(lib, e)
+	}
+
+	// Fetch the saved pipe-separated 0/1 string for this patient
+	// Example: "1|0|1|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0" means disease[0] and disease[2] are checked
+	var saved string
+	db.QueryRow("SELECT mdisease_code FROM patient_medhist WHERE patno = ?", patno).Scan(&saved)
+
+	// Split the saved string into individual bits
+	bits := []string{}
+	if saved != "" {
+		bits = strings.Split(saved, "|")
+	}
+
+	// Build the response array — each disease gets its is_checked value from its position in bits[]
 	var list []MedicalHistoryItem
-	for rows.Next() {
-		var h MedicalHistoryItem
-		rows.Scan(&h.ID, &h.PatientID, &h.DiseaseCode, &h.DiseaseName, &h.IsChecked)
-		list = append(list, h)
+	for i, d := range lib {
+		isChecked := false
+		if i < len(bits) {
+			isChecked = bits[i] == "1" // "1" = checked, "0" or missing = unchecked
+		}
+		list = append(list, MedicalHistoryItem{
+			DiseaseCode: d.Code,
+			DiseaseName: d.Desc,
+			IsChecked:   isChecked,
+		})
 	}
 	json.NewEncoder(w).Encode(list)
 }
 
+// saveMedicalHistory handles POST /api/patients/{patientId}/medical-history
+// It receives the full disease list with is_checked flags, builds a positional 0/1 string
+// ordered by tsekap_lib_mdiseases, and upserts one row into patient_medhist.
 func saveMedicalHistory(w http.ResponseWriter, r *http.Request) {
-	patientID := mux.Vars(r)["patientId"]
+	w.Header().Set("Content-Type", "application/json")
+	patientID := mux.Vars(r)["patientId"] // numeric ID from URL
+
+	// Decode the JSON body — array of {disease_code, disease_name, is_checked}
 	var items []MedicalHistoryItem
-	json.NewDecoder(r.Body).Decode(&items)
-	db.Exec("DELETE FROM tsekap_tbl_prof_medhist WHERE patient_id = ?", patientID)
+	if err := json.NewDecoder(r.Body).Decode(&items); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Translate numeric patient ID → case_no used as the primary key in patient_medhist
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		patno = patientID // fallback to numeric ID
+	}
+
+	// Re-fetch the library order from DB — this guarantees the bit positions in the
+	// saved string always match the current state of tsekap_lib_mdiseases.
+	// If a disease is added/removed, the string will be rebuilt correctly on next save.
+	libRows, err := db.Query("SELECT mdisease_code FROM tsekap_lib_mdiseases ORDER BY mdisease_code")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer libRows.Close()
+	var libOrder []string
+	for libRows.Next() {
+		var code string
+		libRows.Scan(&code)
+		libOrder = append(libOrder, code)
+	}
+
+	// Build a lookup map: disease_code => is_checked from the request body
+	checkedMap := map[string]bool{}
 	for _, item := range items {
-		if item.IsChecked {
-			db.Exec("INSERT INTO tsekap_tbl_prof_medhist (patient_id, disease_code, disease_name, is_checked) VALUES (?, ?, ?, ?)",
-				patientID, item.DiseaseCode, item.DiseaseName, true)
+		checkedMap[item.DiseaseCode] = item.IsChecked
+	}
+
+	// Build the positional 1|0 string in the same order as the library
+	// e.g. if lib has [001,002,003] and 001+003 are checked → "1|0|1"
+	bits := make([]string, len(libOrder))
+	for i, code := range libOrder {
+		if checkedMap[code] {
+			bits[i] = "1"
+		} else {
+			bits[i] = "0"
 		}
 	}
-	json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+	mdiseaseCode := strings.Join(bits, "|")
+
+	// UPSERT: INSERT if this patient has no row yet, UPDATE if they do.
+	// ON DUPLICATE KEY UPDATE means no need for a separate SELECT COUNT check.
+	_, execErr := db.Exec(
+		`INSERT INTO patient_medhist (patno, mdisease_code, date_added, added_by)
+		 VALUES (?, ?, NOW(), 'system')
+		 ON DUPLICATE KEY UPDATE mdisease_code = VALUES(mdisease_code), date_added = NOW()`,
+		patno, mdiseaseCode)
+	if execErr != nil {
+		log.Println("UPSERT error:", execErr)
+		http.Error(w, execErr.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Return the saved values so the frontend/SQLyog can verify what was stored
+	json.NewEncoder(w).Encode(map[string]string{"message": "Saved", "patno": patno, "mdisease_code": mdiseaseCode})
 }
 
 func getFamilyHistory(w http.ResponseWriter, r *http.Request) {
@@ -744,9 +853,37 @@ func getPatients(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(patients)
 }
 
+// generateCaseNo creates a unique patient case number in the format CYYYY-NNNNN.
+// Examples: C2026-00001, C2026-00002, C2027-00001 (resets each year)
+// Logic:
+//  1. Gets the current year from the DB server (not the app server) to avoid clock issues.
+//  2. Queries the max existing sequence for that year prefix.
+//  3. Returns prefix + (maxSeq + 1) zero-padded to 5 digits.
+func generateCaseNo() string {
+	// Use DB server time so case numbers are consistent even if backend clock is wrong
+	var dbYear int
+	if err := db.QueryRow("SELECT YEAR(NOW())").Scan(&dbYear); err != nil || dbYear == 0 {
+		dbYear = 2026 // safe default
+	}
+	prefix := fmt.Sprintf("C%d-", dbYear) // e.g. "C2026-"
+
+	// Find the highest sequence number already used this year (e.g. 3 if C2026-00003 exists)
+	var maxSeq int
+	db.QueryRow(
+		`SELECT COALESCE(MAX(CAST(SUBSTRING(case_no, 7) AS UNSIGNED)), 0)
+		 FROM patients WHERE case_no LIKE ?`, prefix+"%").Scan(&maxSeq)
+
+	// Return next sequence zero-padded to 5 digits: C2026-00004
+	return fmt.Sprintf("%s%05d", prefix, maxSeq+1)
+}
+
 func createPatient(w http.ResponseWriter, r *http.Request) {
 	var p Patient
 	json.NewDecoder(r.Body).Decode(&p)
+
+	// Always auto-generate the case number on the backend
+	p.CaseNo = generateCaseNo()
+
 	result, err := db.Exec(`INSERT INTO patients 
 			(case_no, hospital_no, lastname, firstname, middlename, suffix, birthdate, age, 
 			 room, admission_date, discharge_date, sex, height, weight, complaint) 
@@ -758,8 +895,9 @@ func createPatient(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	id, _ := result.LastInsertId()
-	p.ID = int(id)
+	newID, _ := result.LastInsertId()
+	p.ID = int(newID)
+	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(p)
 }
 
@@ -824,8 +962,6 @@ func createPatientsTable() {
 	}
 }
 
-
-
 // Library endpoint: surgical options
 func getSurgicalLib(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -868,6 +1004,29 @@ func getSurgicalLib(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewEncoder(w).Encode(list)
 }
+
+// createMedHistSummaryTable auto-creates the patient_medhist table on backend startup.
+// Schema design:
+//
+//	patno         - the patient's case_no (e.g. C2026-00001), serves as PRIMARY KEY
+//	mdisease_code - pipe-separated 0/1 string, one bit per disease in tsekap_lib_mdiseases order
+//	                e.g. "1|0|1|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0" means disease 1 and 3 are checked
+//	date_added    - timestamp of last save
+//	added_by      - who saved (currently always 'system')
+//
+// Note: no foreign keys, so diseases can be freely added/deleted in tsekap_lib_mdiseases.
+func createMedHistSummaryTable() {
+	db.Exec(`CREATE TABLE IF NOT EXISTS patient_medhist (
+		patno        VARCHAR(20)  NOT NULL PRIMARY KEY,
+		mdisease_code VARCHAR(500) NOT NULL DEFAULT '',
+		date_added   DATETIME,
+		added_by     VARCHAR(50)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+	log.Println("✓ patient_medhist table ready")
+}
+
+// ensureMedHistColumns — kept as no-op for compatibility
+func ensureMedHistColumns() {}
 
 func createPhysicalExamTables() {
 	// General info table (general survey, remarks, blood type)
@@ -1040,7 +1199,7 @@ func savePhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 type PhysicalExamFinding struct {
 	ID          int    `json:"id"`
 	PatientID   int    `json:"patient_id"`
-	Category    string `json:"category"`    // e.g. "skin", "heent", "chest"
+	Category    string `json:"category"`     // e.g. "skin", "heent", "chest"
 	FindingCode string `json:"finding_code"` // e.g. "essentiallyNormal"
 	FindingDesc string `json:"finding_desc"` // e.g. "Essentially normal"
 	IsChecked   bool   `json:"is_checked"`
