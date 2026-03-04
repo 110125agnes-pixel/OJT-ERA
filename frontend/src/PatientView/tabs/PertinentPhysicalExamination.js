@@ -81,15 +81,31 @@ const PertinentPhysicalExamination = ({ patientId }) => {
         setMessage('');
 
         try {
-            const response = await fetch(`http://localhost:8080/api/patients/${patientId}/pertinent-physical-exam`, {
+            // convert numeric string fields to numbers so Go backend can unmarshal into ints/floats
+            const intFields = ['systolic_bp', 'diastolic_bp', 'heart_rate', 'respiratory_rate', 'pzscore'];
+            const floatFields = ['temperature', 'height', 'weight', 'bmi', 'length_pediatric', 'head_circumference', 'skinfold_thickness', 'waist', 'hip', 'limbs', 'arm_circumference'];
+
+            const payload = {};
+            Object.keys(formData).forEach((k) => {
+                const v = formData[k];
+                if (intFields.includes(k)) {
+                    const n = parseInt(v, 10);
+                    payload[k] = Number.isNaN(n) ? 0 : n;
+                } else if (floatFields.includes(k)) {
+                    const f = parseFloat(v);
+                    payload[k] = Number.isNaN(f) ? 0 : f;
+                } else {
+                    payload[k] = v;
+                }
+            });
+            payload.patient_id = parseInt(patientId, 10);
+
+            const response = await fetch(`/api/patients/${patientId}/pertinent-physical-exam`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    patient_id: parseInt(patientId),
-                    ...formData
-                }),
+                body: JSON.stringify(payload),
             });
 
             if (response.ok) {

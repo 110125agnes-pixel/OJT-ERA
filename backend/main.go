@@ -334,41 +334,150 @@ func deleteInventoryItem(w http.ResponseWriter, r *http.Request) {
 
 // ==================== SOCIAL HISTORY HANDLERS ====================
 
+// ==================== SOCIAL HISTORY HANDLERS ====================
+
+// getSocialHistory reads social history from patient_socialhistory using patient's case_no (patno).
 func getSocialHistory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	patientID := mux.Vars(r)["patientId"]
-	var sh SocialHistory
-	err := db.QueryRow(`SELECT id, patient_id, is_patient_smoker, cigarette_packs_per_year, 
-							is_alcohol_drinker, bottles_per_day, is_illicit_drug_user, is_sexually_active 
-							FROM tsekap_tbl_prof_sochist WHERE patient_id = ?`, patientID).Scan(
-		&sh.ID, &sh.PatientID, &sh.IsPatientSmoker, &sh.CigarettePacksPerYear,
-		&sh.IsAlcoholDrinker, &sh.BottlesPerDay, &sh.IsIllicitDrugUser, &sh.IsSexuallyActive)
+
+	// translate numeric ID -> case_no (patno)
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		patno = patientID
+	}
+
+	// read row from patient_socialhistory (store strings like "Yes"/"No"/"Quit")
+	var (
+		isSmoker, cigPacks, isAlcohol, bottlesPerDay, isIllicit, isSexually sql.NullString
+	)
+	err := db.QueryRow(`SELECT is_patient_smoker, cigarette_packs_per_year, is_alcohol_drinker, bottles_per_day, is_illicit_drug_user, is_sexually_active
+		FROM patient_socialhistory WHERE patno = ?`, patno).Scan(&isSmoker, &cigPacks, &isAlcohol, &bottlesPerDay, &isIllicit, &isSexually)
 	if err != nil {
-		http.Error(w, "Not found", http.StatusNotFound)
+		// return empty/default object when not found
+		json.NewEncoder(w).Encode(map[string]interface{}{})
 		return
 	}
-	json.NewEncoder(w).Encode(sh)
+
+	resp := map[string]interface{}{
+		"is_patient_smoker": func() string {
+			if isSmoker.Valid {
+				return isSmoker.String
+			}
+			return "No"
+		}(),
+		"cigarette_packs_per_year": func() int {
+			if cigPacks.Valid {
+				if i, err := strconv.Atoi(cigPacks.String); err == nil {
+					return i
+				}
+			}
+			return 0
+		}(),
+		"is_alcohol_drinker": func() string {
+			if isAlcohol.Valid {
+				return isAlcohol.String
+			}
+			return "No"
+		}(),
+		"bottles_per_day": func() int {
+			if bottlesPerDay.Valid {
+				if i, err := strconv.Atoi(bottlesPerDay.String); err == nil {
+					return i
+				}
+			}
+			return 0
+		}(),
+		"is_illicit_drug_user": func() string {
+			if isIllicit.Valid {
+				return isIllicit.String
+			}
+			return "No"
+		}(),
+		"is_sexually_active": func() string {
+			if isSexually.Valid {
+				return isSexually.String
+			}
+			return "No"
+		}(),
+	}
+	json.NewEncoder(w).Encode(resp)
 }
 
+// saveSocialHistory upserts social history into patient_socialhistory mapping Yes/No/Quit -> 1/2/0
 func saveSocialHistory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	patientID := mux.Vars(r)["patientId"]
-	var sh SocialHistory
-	json.NewDecoder(r.Body).Decode(&sh)
 
-	var exists int
-	db.QueryRow("SELECT COUNT(*) FROM tsekap_tbl_prof_sochist WHERE patient_id = ?", patientID).Scan(&exists)
-
-	if exists > 0 {
-		db.Exec(`UPDATE tsekap_tbl_prof_sochist SET is_patient_smoker=?, cigarette_packs_per_year=?, 
-					 is_alcohol_drinker=?, bottles_per_day=?, is_illicit_drug_user=?, is_sexually_active=? 
-					 WHERE patient_id=?`, sh.IsPatientSmoker, sh.CigarettePacksPerYear, sh.IsAlcoholDrinker,
-			sh.BottlesPerDay, sh.IsIllicitDrugUser, sh.IsSexuallyActive, patientID)
-	} else {
-		db.Exec(`INSERT INTO tsekap_tbl_prof_sochist (patient_id, is_patient_smoker, cigarette_packs_per_year, 
-					 is_alcohol_drinker, bottles_per_day, is_illicit_drug_user, is_sexually_active) 
-					 VALUES (?, ?, ?, ?, ?, ?, ?)`, patientID, sh.IsPatientSmoker, sh.CigarettePacksPerYear,
-			sh.IsAlcoholDrinker, sh.BottlesPerDay, sh.IsIllicitDrugUser, sh.IsSexuallyActive)
+	var payload map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
-	json.NewEncoder(w).Encode(sh)
+
+	// translate id -> patno
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		patno = patientID
+	}
+
+	// helpers to extract string and int values from payload
+	toStr := func(k string) string {
+		if v, ok := payload[k]; ok && v != nil {
+			return fmt.Sprintf("%v", v)
+		}
+		return "No"
+	}
+	toInt := func(k string) int {
+		if v, ok := payload[k]; ok && v != nil {
+			switch t := v.(type) {
+			case float64:
+				return int(t)
+			case string:
+				if t == "" {
+					return 0
+				}
+				if i, err := strconv.Atoi(t); err == nil {
+					return i
+				}
+			}
+		}
+		return 0
+	}
+
+	// Upsert into patient_socialhistory (patno primary key)
+	_, execErr := db.Exec(`INSERT INTO patient_socialhistory (
+		patno, is_patient_smoker, cigarette_packs_per_year, is_alcohol_drinker, bottles_per_day, is_illicit_drug_user, is_sexually_active, date_added, added_by
+	) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), 'system')
+	ON DUPLICATE KEY UPDATE
+		is_patient_smoker = VALUES(is_patient_smoker),
+		cigarette_packs_per_year = VALUES(cigarette_packs_per_year),
+		is_alcohol_drinker = VALUES(is_alcohol_drinker),
+		bottles_per_day = VALUES(bottles_per_day),
+		is_illicit_drug_user = VALUES(is_illicit_drug_user),
+		is_sexually_active = VALUES(is_sexually_active),
+		date_added = NOW()`,
+		patno,
+		toStr("is_patient_smoker"), toInt("cigarette_packs_per_year"), toStr("is_alcohol_drinker"), toInt("bottles_per_day"), toStr("is_illicit_drug_user"), toStr("is_sexually_active"))
+
+	if execErr != nil {
+		log.Println("saveSocialHistory error:", execErr)
+		http.Error(w, execErr.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// return the saved payload as frontend expects strings for radio fields
+	saved := map[string]interface{}{
+		"is_patient_smoker":        payload["is_patient_smoker"],
+		"cigarette_packs_per_year": toInt("cigarette_packs_per_year"),
+		"is_alcohol_drinker":       payload["is_alcohol_drinker"],
+		"bottles_per_day":          toInt("bottles_per_day"),
+		"is_illicit_drug_user":     payload["is_illicit_drug_user"],
+		"is_sexually_active":       payload["is_sexually_active"],
+	}
+	json.NewEncoder(w).Encode(saved)
 }
 
 // ==================== PHYSICAL EXAM HANDLERS ====================
@@ -376,13 +485,14 @@ func saveSocialHistory(w http.ResponseWriter, r *http.Request) {
 func getPertinentPhysicalExam(w http.ResponseWriter, r *http.Request) {
 	patientID := mux.Vars(r)["patientId"]
 	var ppe PertinentPhysicalExam
+	// Read from the new table patient_pertinent_physical_exam. Column names in DB use _cm/_kg suffixes for measurements.
 	err := db.QueryRow(`SELECT id, patient_id, systolic_bp, diastolic_bp, heart_rate, respiratory_rate,
-							temperature, height, weight, bmi, pzscore, left_eye_vision, right_eye_vision,
-							length_pediatric, head_circumference, skinfold_thickness, waist, hip, limbs, arm_circumference
-							FROM tsekap_tbl_prof_pespecific WHERE patient_id = ?`, patientID).Scan(
+			temperature, height_cm, weight_kg, bmi, pzscore, right_eye_vision, left_eye_vision,
+			length_pediatric_cm, head_circumference_cm, skinfold_thickness_cm, waist_cm, hip_cm, limbs_cm, arm_circumference_cm
+			FROM patient_pertinent_physical_exam WHERE patient_id = ?`, patientID).Scan(
 		&ppe.ID, &ppe.PatientID, &ppe.SystolicBP, &ppe.DiastolicBP, &ppe.HeartRate, &ppe.RespiratoryRate,
-		&ppe.Temperature, &ppe.Height, &ppe.Weight, &ppe.BMI, &ppe.PZScore, &ppe.LeftEyeVision,
-		&ppe.RightEyeVision, &ppe.LengthPediatric, &ppe.HeadCircumference, &ppe.SkinfoldThickness,
+		&ppe.Temperature, &ppe.Height, &ppe.Weight, &ppe.BMI, &ppe.PZScore, &ppe.RightEyeVision,
+		&ppe.LeftEyeVision, &ppe.LengthPediatric, &ppe.HeadCircumference, &ppe.SkinfoldThickness,
 		&ppe.Waist, &ppe.Hip, &ppe.Limbs, &ppe.ArmCircumference)
 	if err != nil {
 		http.Error(w, "Not found", http.StatusNotFound)
@@ -394,31 +504,66 @@ func getPertinentPhysicalExam(w http.ResponseWriter, r *http.Request) {
 func savePertinentPhysicalExam(w http.ResponseWriter, r *http.Request) {
 	patientID := mux.Vars(r)["patientId"]
 	var ppe PertinentPhysicalExam
-	json.NewDecoder(r.Body).Decode(&ppe)
+	if err := json.NewDecoder(r.Body).Decode(&ppe); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	var exists int
-	db.QueryRow("SELECT COUNT(*) FROM tsekap_tbl_prof_pespecific WHERE patient_id = ?", patientID).Scan(&exists)
+	db.QueryRow("SELECT COUNT(*) FROM patient_pertinent_physical_exam WHERE patient_id = ?", patientID).Scan(&exists)
 
 	if exists > 0 {
-		db.Exec(`UPDATE tsekap_tbl_prof_pespecific SET systolic_bp=?, diastolic_bp=?, heart_rate=?, 
-					 respiratory_rate=?, temperature=?, height=?, weight=?, bmi=?, pzscore=?, left_eye_vision=?, 
-					 right_eye_vision=?, length_pediatric=?, head_circumference=?, skinfold_thickness=?, 
-					 waist=?, hip=?, limbs=?, arm_circumference=? WHERE patient_id=?`,
+		db.Exec(`UPDATE patient_pertinent_physical_exam SET systolic_bp=?, diastolic_bp=?, heart_rate=?,
+			respiratory_rate=?, temperature=?, height_cm=?, weight_kg=?, bmi=?, pzscore=?, right_eye_vision=?,
+			left_eye_vision=?, length_pediatric_cm=?, head_circumference_cm=?, skinfold_thickness_cm=?,
+			waist_cm=?, hip_cm=?, limbs_cm=?, arm_circumference_cm=? WHERE patient_id=?`,
 			ppe.SystolicBP, ppe.DiastolicBP, ppe.HeartRate, ppe.RespiratoryRate, ppe.Temperature,
-			ppe.Height, ppe.Weight, ppe.BMI, ppe.PZScore, ppe.LeftEyeVision, ppe.RightEyeVision,
+			ppe.Height, ppe.Weight, ppe.BMI, ppe.PZScore, ppe.RightEyeVision, ppe.LeftEyeVision,
 			ppe.LengthPediatric, ppe.HeadCircumference, ppe.SkinfoldThickness, ppe.Waist, ppe.Hip,
 			ppe.Limbs, ppe.ArmCircumference, patientID)
 	} else {
-		db.Exec(`INSERT INTO tsekap_tbl_prof_pespecific (patient_id, systolic_bp, diastolic_bp, heart_rate, 
-					 respiratory_rate, temperature, height, weight, bmi, pzscore, left_eye_vision, 
-					 right_eye_vision, length_pediatric, head_circumference, skinfold_thickness, 
-					 waist, hip, limbs, arm_circumference) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		db.Exec(`INSERT INTO patient_pertinent_physical_exam (patient_id, systolic_bp, diastolic_bp, heart_rate,
+			respiratory_rate, temperature, height_cm, weight_kg, bmi, pzscore, right_eye_vision,
+			left_eye_vision, length_pediatric_cm, head_circumference_cm, skinfold_thickness_cm,
+			waist_cm, hip_cm, limbs_cm, arm_circumference_cm)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			patientID, ppe.SystolicBP, ppe.DiastolicBP, ppe.HeartRate, ppe.RespiratoryRate, ppe.Temperature,
-			ppe.Height, ppe.Weight, ppe.BMI, ppe.PZScore, ppe.LeftEyeVision, ppe.RightEyeVision,
+			ppe.Height, ppe.Weight, ppe.BMI, ppe.PZScore, ppe.RightEyeVision, ppe.LeftEyeVision,
 			ppe.LengthPediatric, ppe.HeadCircumference, ppe.SkinfoldThickness, ppe.Waist, ppe.Hip,
 			ppe.Limbs, ppe.ArmCircumference)
 	}
 	json.NewEncoder(w).Encode(ppe)
+}
+
+// createPatientPertinentPhysicalExamTable creates a table to store Pertinent Physical Examination per patient.
+func createPatientPertinentPhysicalExamTable() {
+	db.Exec(`CREATE TABLE IF NOT EXISTS patient_pertinent_physical_exam (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		patient_id INT NOT NULL UNIQUE,
+		systolic_bp INT,
+		diastolic_bp INT,
+		heart_rate INT,
+		respiratory_rate INT,
+		temperature DECIMAL(5,2),
+		height_cm DECIMAL(6,2),
+		weight_kg DECIMAL(6,2),
+		bmi DECIMAL(5,2),
+		pzscore INT,
+		right_eye_vision VARCHAR(32),
+		left_eye_vision VARCHAR(32),
+		length_pediatric_cm DECIMAL(6,2),
+		head_circumference_cm DECIMAL(6,2),
+		skinfold_thickness_cm DECIMAL(6,2),
+		waist_cm DECIMAL(6,2),
+		hip_cm DECIMAL(6,2),
+		limbs_cm DECIMAL(6,2),
+		arm_circumference_cm DECIMAL(6,2),
+		remarks TEXT,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		KEY (patient_id)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+	log.Println("✓ patient_pertinent_physical_exam table ready")
 }
 
 // ==================== CHECKBOX HISTORY HANDLERS ====================
@@ -678,28 +823,119 @@ func saveFamilyHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func getSurgicalHistory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	patientID := mux.Vars(r)["patientId"]
-	rows, _ := db.Query("SELECT id, patient_id, surgery_code, surgery_name, notes, is_checked FROM tsekap_tbl_prof_surghist WHERE patient_id = ?", patientID)
-	defer rows.Close()
-	var list []SurgicalHistoryItem
-	for rows.Next() {
-		var h SurgicalHistoryItem
-		rows.Scan(&h.ID, &h.PatientID, &h.SurgeryCode, &h.SurgeryName, &h.Notes, &h.IsChecked)
-		list = append(list, h)
+
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		json.NewEncoder(w).Encode([]interface{}{})
+		return
+	}
+
+	// Load the ordered surgical library
+	libRows, err := db.Query("SELECT SURG_CODE, SURG_DESC FROM tsekap_lib_surgical WHERE LIB_STAT=1 ORDER BY SORT_NO, SURG_CODE")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer libRows.Close()
+	type SurgLib struct {
+		Code string
+		Desc string
+	}
+	var libList []SurgLib
+	for libRows.Next() {
+		var s SurgLib
+		libRows.Scan(&s.Code, &s.Desc)
+		libList = append(libList, s)
+	}
+
+	// Load patient's saved bit string
+	var surgCode string
+	db.QueryRow("SELECT surg_code FROM patient_surgery WHERE patno = ?", patno).Scan(&surgCode)
+
+	bits := strings.Split(surgCode, "|")
+
+	type SurgItem struct {
+		SurgeryCode string `json:"SurgeryCode"`
+		SurgeryName string `json:"SurgeryName"`
+		IsChecked   bool   `json:"IsChecked"`
+	}
+	list := []SurgItem{}
+	for i, s := range libList {
+		checked := false
+		if i < len(bits) && bits[i] == "1" {
+			checked = true
+		}
+		list = append(list, SurgItem{SurgeryCode: s.Code, SurgeryName: s.Desc, IsChecked: checked})
 	}
 	json.NewEncoder(w).Encode(list)
 }
 
 func saveSurgicalHistory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	patientID := mux.Vars(r)["patientId"]
-	var items []SurgicalHistoryItem
-	json.NewDecoder(r.Body).Decode(&items)
-	db.Exec("DELETE FROM tsekap_tbl_prof_surghist WHERE patient_id = ?", patientID)
-	for _, item := range items {
-		if item.IsChecked {
-			db.Exec("INSERT INTO tsekap_tbl_prof_surghist (patient_id, surgery_code, surgery_name, notes, is_checked) VALUES (?, ?, ?, ?, ?)",
-				patientID, item.SurgeryCode, item.SurgeryName, item.Notes, true)
+
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		http.Error(w, "patient not found", http.StatusNotFound)
+		return
+	}
+
+	// Load ordered library to build bit positions
+	libRows, err := db.Query("SELECT SURG_CODE FROM tsekap_lib_surgical WHERE LIB_STAT=1 ORDER BY SORT_NO, SURG_CODE")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer libRows.Close()
+	var libCodes []string
+	for libRows.Next() {
+		var code string
+		libRows.Scan(&code)
+		libCodes = append(libCodes, code)
+	}
+
+	// Decode incoming payload (frontend sends PascalCase keys)
+	type SaveItem struct {
+		SurgeryCode string `json:"SurgeryCode"`
+		IsChecked   bool   `json:"IsChecked"`
+	}
+	var items []SaveItem
+	if err := json.NewDecoder(r.Body).Decode(&items); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Build checked set
+	checkedSet := map[string]bool{}
+	for _, it := range items {
+		if it.IsChecked {
+			checkedSet[it.SurgeryCode] = true
 		}
+	}
+
+	// Build pipe-separated bit string
+	bits := make([]string, len(libCodes))
+	for i, code := range libCodes {
+		if checkedSet[code] {
+			bits[i] = "1"
+		} else {
+			bits[i] = "0"
+		}
+	}
+	surgCode := strings.Join(bits, "|")
+
+	_, execErr := db.Exec(`INSERT INTO patient_surgery (patno, surg_code, date_added, added_by)
+		VALUES (?, ?, NOW(), 'system')
+		ON DUPLICATE KEY UPDATE surg_code=VALUES(surg_code), date_added=NOW()`,
+		patno, surgCode)
+	if execErr != nil {
+		log.Println("saveSurgicalHistory error:", execErr)
+		http.Error(w, execErr.Error(), http.StatusInternalServerError)
+		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
 }
@@ -1292,7 +1528,7 @@ func createPatientsTable() {
 // Library endpoint: surgical options
 func getSurgicalLib(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	rows, err := db.Query("SELECT SURGERY_CODE, SURGERY_DESC FROM tsekap_lib_surgical ORDER BY SORT_NO, SURGERY_CODE")
+	rows, err := db.Query("SELECT SURG_CODE, SURG_DESC FROM tsekap_lib_surgical WHERE LIB_STAT=1 ORDER BY SORT_NO, SURG_CODE")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1300,15 +1536,15 @@ func getSurgicalLib(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type SurgItem struct {
-		SURGERY_CODE string `json:"SURGERY_CODE"`
-		SURGERY_DESC string `json:"SURGERY_DESC"`
+		Code string `json:"code"`
+		Desc string `json:"desc"`
 	}
 
 	list := []SurgItem{}
 	for rows.Next() {
 		var code, desc string
 		rows.Scan(&code, &desc)
-		list = append(list, SurgItem{SURGERY_CODE: code, SURGERY_DESC: desc})
+		list = append(list, SurgItem{Code: code, Desc: desc})
 	}
 	json.NewEncoder(w).Encode(list)
 }
