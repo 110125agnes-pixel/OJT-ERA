@@ -182,6 +182,7 @@ func main() {
 	router.HandleFunc("/api/items", createPatient).Methods("POST")        // Create
 	router.HandleFunc("/api/items/{id}", updatePatient).Methods("PUT")    // Update
 	router.HandleFunc("/api/items/{id}", deletePatient).Methods("DELETE") // Delete
+	router.HandleFunc("/api/auth/login", login).Methods("POST")
 	router.HandleFunc("/api/auth/signup", signUp).Methods("POST")
 
 	// Medical History Routes
@@ -273,6 +274,55 @@ func signUp(w http.ResponseWriter, r *http.Request) {
 			Username: username,
 			Email:    email,
 		},
+	})
+}
+
+func login(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var req AuthRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	username := strings.TrimSpace(req.Username)
+	password := req.Password
+
+	if username == "" || password == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(AuthResponse{Success: false, Message: "Username and password are required."})
+		return
+	}
+
+	var user User
+	var storedHash string
+	err := db.QueryRow(
+		"SELECT id, username, email, password_hash FROM accounts WHERE username = ? LIMIT 1",
+		username,
+	).Scan(&user.ID, &user.Username, &user.Email, &storedHash)
+
+	if err == sql.ErrNoRows {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(AuthResponse{Success: false, Message: "Invalid username or password."})
+		return
+	}
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if storedHash != hashPassword(password) {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(AuthResponse{Success: false, Message: "Invalid username or password."})
+		return
+	}
+
+	json.NewEncoder(w).Encode(AuthResponse{
+		Success: true,
+		Message: "Login successful.",
+		User:    &user,
 	})
 }
 

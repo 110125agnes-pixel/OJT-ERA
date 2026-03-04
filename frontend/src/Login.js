@@ -18,7 +18,7 @@ function Login({ onLogin, onSignUp }) {
     return minLength.test(pwd) && hasUpper.test(pwd) && hasNumber.test(pwd);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!username.trim() || !password) {
       setError('Username and password are required.');
@@ -28,7 +28,7 @@ function Login({ onLogin, onSignUp }) {
       setError('Password must be at least 8 characters, include an uppercase letter and a number.');
       return;
     }
-    const loginResult = onLogin(username.trim(), password);
+    const loginResult = await onLogin(username.trim(), password);
     if (!loginResult?.success) {
       setError(loginResult?.message || 'Login failed.');
       return;

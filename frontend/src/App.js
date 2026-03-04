@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from "react";
+﻿import React, { useState } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -26,65 +26,33 @@ const getApiErrorMessage = (error, fallbackMessage) => {
   return fallbackMessage;
 };
 
-const REGISTERED_USER_STORAGE_KEY = "registeredUser";
-
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [registeredUser, setRegisteredUser] = useState(null);
 
-  useEffect(() => {
-    const storedUser = localStorage.getItem(REGISTERED_USER_STORAGE_KEY);
-    if (!storedUser) {
-      return;
-    }
-
+  const handleLogin = async (username, password) => {
     try {
-      const parsedUser = JSON.parse(storedUser);
-      if (parsedUser?.username && parsedUser?.password) {
-        setRegisteredUser(parsedUser);
+      const response = await authService.login({ username, password });
+
+      if (!response?.success) {
+        return {
+          success: false,
+          message: response?.message || "Invalid username or password.",
+        };
       }
+
+      setIsLoggedIn(true);
+      return { success: true };
     } catch (error) {
-      localStorage.removeItem(REGISTERED_USER_STORAGE_KEY);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!registeredUser) {
-      return;
-    }
-
-    localStorage.setItem(
-      REGISTERED_USER_STORAGE_KEY,
-      JSON.stringify(registeredUser)
-    );
-  }, [registeredUser]);
-
-  const handleLogin = (username, password) => {
-    if (!registeredUser) {
       return {
         success: false,
-        message: "No account found. Please sign up first.",
+        message: getApiErrorMessage(error, "Invalid username or password."),
       };
     }
-
-    const isValidUser =
-      username === registeredUser.username && password === registeredUser.password;
-
-    if (!isValidUser) {
-      return {
-        success: false,
-        message: "Invalid username or password.",
-      };
-    }
-
-    setIsLoggedIn(true);
-    return { success: true };
   };
 
   const handleSignUp = async (username, email, password) => {
     try {
       await authService.signup({ username, email, password });
-      setRegisteredUser({ username, email, password });
       return { success: true };
     } catch (error) {
       return {
