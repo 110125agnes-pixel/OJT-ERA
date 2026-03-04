@@ -714,12 +714,12 @@ func getFamilyHistory(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	patientID := mux.Vars(r)["patientId"]
 
-	// Translate numeric patient ID → case_no (patno)
+	// Translate numeric patient ID → case_no (patno). Do NOT fallback to patientID.
+	// If no case_no exists for this patient (new unsaved patient), skip summary expansions
+	// so we don't show or write data for other patients.
 	var patno string
 	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
-	if patno == "" {
-		patno = patientID
-	}
+	hasPatno := patno != ""
 
 	// Load library order (defines bit positions)
 	libRows, err := db.Query("SELECT mdisease_code, mdisease_desc FROM tsekap_lib_mdiseases ORDER BY mdisease_code")
@@ -737,10 +737,12 @@ func getFamilyHistory(w http.ResponseWriter, r *http.Request) {
 		lib = append(lib, e)
 	}
 
-	// Fetch saved pipe-separated string for this patient
+	// Fetch saved pipe-separated string for this patient (only when case_no exists)
 	var saved string
 	var notes sql.NullString
-	db.QueryRow("SELECT fdisease_code, notes FROM patient_famhist WHERE patno = ?", patno).Scan(&saved, &notes)
+	if hasPatno {
+		db.QueryRow("SELECT fdisease_code, notes FROM patient_famhist WHERE patno = ?", patno).Scan(&saved, &notes)
+	}
 	bits := []string{}
 	if saved != "" {
 		bits = strings.Split(saved, "|")
@@ -779,11 +781,9 @@ func saveFamilyHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Translate numeric patient ID → case_no (patno)
+	// Do NOT fallback to numeric patientID. Only expand summary tables when a case_no exists.
 	var patno string
 	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
-	if patno == "" {
-		patno = patientID
-	}
 
 	// Re-fetch library order
 	libRows, err := db.Query("SELECT mdisease_code FROM tsekap_lib_mdiseases ORDER BY mdisease_code")
@@ -956,12 +956,13 @@ func getImmunization(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	patientID := mux.Vars(r)["patientId"]
 
-	// Translate numeric patient ID → case_no (patno)
-	var patno string
-	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
-	if patno == "" {
-		patno = patientID
-	}
+		// Translate numeric patient ID → case_no (patno)
+		var patno string
+		db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+		if patno == "" {
+			http.Error(w, "patient has no case_no; cannot save summary", http.StatusBadRequest)
+			return
+		}
 
 	// Build library order: child, young, preg, elderly (preserves positions)
 	type libEntry struct{ Code, Name, Category string }
@@ -1266,12 +1267,13 @@ func saveImmunization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Translate numeric patient ID → case_no (patno)
-	var patno string
-	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
-	if patno == "" {
-		patno = patientID
-	}
+		// Translate numeric patient ID → case_no (patno)
+		var patno string
+		db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+		if patno == "" {
+			http.Error(w, "patient has no case_no; cannot save summary", http.StatusBadRequest)
+			return
+		}
 
 	// Rebuild per-category library orders (same order as getImmunization)
 	childOrder := []string{}
@@ -1847,9 +1849,13 @@ type FindingPayload struct {
 func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	patientID := mux.Vars(r)["patientId"]
-	// First, load existing rows for non-skin categories
+	// First, load existing rows for categories that are NOT stored as summary bit-strings.
+	// Exclude categories which have dedicated patient_pe_* summary tables so we don't return
+	// or duplicate data for skin, genitourinary, digitalRectal, neurological and the
+	// summary-backed HEENT/Chest/Heart/Abdomen categories.
 	rows, err := db.Query(`SELECT id, patient_id, category, finding_code, finding_desc, is_checked, others_text
-		FROM tsekap_tbl_prof_pe_findings WHERE patient_id = ?`, patientID)
+		FROM tsekap_tbl_prof_pe_findings WHERE patient_id = ?
+		AND category NOT IN ('skin','genitourinary','digitalRectal','neurological','heent','chest','heart','abdomen')`, patientID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1874,12 +1880,10 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Now load skin findings from the summary table (if present), and expand into FindingRow entries
-	// Translate numeric patient ID → case_no (patno)
+	// Translate numeric patient ID → case_no (patno). Do NOT fallback to numeric patientID.
 	var patno string
 	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
-	if patno == "" {
-		patno = patientID
-	}
+	hasPatno := patno != ""
 
 	// Load skin library order
 	libRows, libErr := db.Query("SELECT SKIN_ID, SKIN_DESC FROM tsekap_lib_skin_extremities ORDER BY SORT_NO, SKIN_ID")
@@ -1893,13 +1897,15 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Read saved skin bits
+	// Read saved skin bits (only if patient has a case_no)
 	var saved string
 	var others sql.NullString
-	db.QueryRow("SELECT skin_code, others_text FROM patient_pe_skin WHERE patno = ?", patno).Scan(&saved, &others)
 	skinBits := []string{}
-	if saved != "" {
-		skinBits = strings.Split(saved, "|")
+	if hasPatno {
+		db.QueryRow("SELECT skin_code, others_text FROM patient_pe_skin WHERE patno = ?", patno).Scan(&saved, &others)
+		if saved != "" {
+			skinBits = strings.Split(saved, "|")
+		}
 	}
 
 	// Build skin finding rows using keys that match frontend ('skin_<ID>')
@@ -1945,13 +1951,15 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Read saved genitourinary bits
+	// Read saved genitourinary bits (only if patient has a case_no)
 	var guSaved string
 	var guOthers sql.NullString
-	db.QueryRow("SELECT gu_code, others_text FROM patient_pe_genitourinary WHERE patno = ?", patno).Scan(&guSaved, &guOthers)
 	guBits := []string{}
-	if guSaved != "" {
-		guBits = strings.Split(guSaved, "|")
+	if hasPatno {
+		db.QueryRow("SELECT gu_code, others_text FROM patient_pe_genitourinary WHERE patno = ?", patno).Scan(&guSaved, &guOthers)
+		if guSaved != "" {
+			guBits = strings.Split(guSaved, "|")
+		}
 	}
 
 	for i, g := range guOrder {
@@ -1995,13 +2003,15 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Read saved digital rectal bits
+	// Read saved digital rectal bits (only if patient has a case_no)
 	var drSaved string
 	var drOthers sql.NullString
-	db.QueryRow("SELECT dr_code, others_text FROM patient_pe_digital_rectal WHERE patno = ?", patno).Scan(&drSaved, &drOthers)
 	drBits := []string{}
-	if drSaved != "" {
-		drBits = strings.Split(drSaved, "|")
+	if hasPatno {
+		db.QueryRow("SELECT dr_code, others_text FROM patient_pe_digital_rectal WHERE patno = ?", patno).Scan(&drSaved, &drOthers)
+		if drSaved != "" {
+			drBits = strings.Split(drSaved, "|")
+		}
 	}
 
 	for i, d := range drOrder {
@@ -2045,13 +2055,15 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Read saved neuro bits
+	// Read saved neuro bits (only if patient has a case_no)
 	var neuroSaved string
 	var neuroOthers sql.NullString
-	db.QueryRow("SELECT neuro_code, others_text FROM patient_pe_neuro WHERE patno = ?", patno).Scan(&neuroSaved, &neuroOthers)
 	neuroBits := []string{}
-	if neuroSaved != "" {
-		neuroBits = strings.Split(neuroSaved, "|")
+	if hasPatno {
+		db.QueryRow("SELECT neuro_code, others_text FROM patient_pe_neuro WHERE patno = ?", patno).Scan(&neuroSaved, &neuroOthers)
+		if neuroSaved != "" {
+			neuroBits = strings.Split(neuroSaved, "|")
+		}
 	}
 
 	for i, n := range neuroOrder {
@@ -2084,203 +2096,211 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Now expand CHEST summary into finding rows (if present)
-	chestLibRows, chestErr := db.Query("SELECT CHEST_ID, CHEST_DESC FROM tsekap_lib_chest ORDER BY SORT_NO, CHEST_ID")
-	var chestOrder []struct{ ID, Desc string }
-	if chestErr == nil {
-		defer chestLibRows.Close()
-		for chestLibRows.Next() {
-			var id, desc string
-			chestLibRows.Scan(&id, &desc)
-			chestOrder = append(chestOrder, struct{ ID, Desc string }{ID: id, Desc: desc})
+	if hasPatno {
+		chestLibRows, chestErr := db.Query("SELECT CHEST_ID, CHEST_DESC FROM tsekap_lib_chest ORDER BY SORT_NO, CHEST_ID")
+		var chestOrder []struct{ ID, Desc string }
+		if chestErr == nil {
+			defer chestLibRows.Close()
+			for chestLibRows.Next() {
+				var id, desc string
+				chestLibRows.Scan(&id, &desc)
+				chestOrder = append(chestOrder, struct{ ID, Desc string }{ID: id, Desc: desc})
+			}
 		}
-	}
 
-	// Read saved chest bits
-	var chestSaved string
-	var chestOthers sql.NullString
-	db.QueryRow("SELECT chest_code, others_text FROM patient_pe_chest WHERE patno = ?", patno).Scan(&chestSaved, &chestOthers)
-	chestBits := []string{}
-	if chestSaved != "" {
-		chestBits = strings.Split(chestSaved, "|")
-	}
-
-	for i, c := range chestOrder {
-		isChecked := false
-		if i < len(chestBits) {
-			isChecked = chestBits[i] == "1"
+		// Read saved chest bits
+		var chestSaved string
+		var chestOthers sql.NullString
+		db.QueryRow("SELECT chest_code, others_text FROM patient_pe_chest WHERE patno = ?", patno).Scan(&chestSaved, &chestOthers)
+		chestBits := []string{}
+		if chestSaved != "" {
+			chestBits = strings.Split(chestSaved, "|")
 		}
-		code := "chest_" + c.ID
-		list = append(list, FindingRow{
-			ID:          0,
-			PatientID:   0,
-			Category:    "chest",
-			FindingCode: code,
-			FindingDesc: c.Desc,
-			IsChecked:   isChecked,
-			OthersText:  "",
-		})
-	}
 
-	if chestOthers.Valid && chestOthers.String != "" {
-		list = append(list, FindingRow{
-			ID:          0,
-			PatientID:   0,
-			Category:    "chest",
-			FindingCode: "others",
-			FindingDesc: "Others",
-			IsChecked:   true,
-			OthersText:  chestOthers.String,
-		})
+		for i, c := range chestOrder {
+			isChecked := false
+			if i < len(chestBits) {
+				isChecked = chestBits[i] == "1"
+			}
+			code := "chest_" + c.ID
+			list = append(list, FindingRow{
+				ID:          0,
+				PatientID:   0,
+				Category:    "chest",
+				FindingCode: code,
+				FindingDesc: c.Desc,
+				IsChecked:   isChecked,
+				OthersText:  "",
+			})
+		}
+
+		if chestOthers.Valid && chestOthers.String != "" {
+			list = append(list, FindingRow{
+				ID:          0,
+				PatientID:   0,
+				Category:    "chest",
+				FindingCode: "others",
+				FindingDesc: "Others",
+				IsChecked:   true,
+				OthersText:  chestOthers.String,
+			})
+		}
 	}
 
 	// Now expand HEART summary into finding rows (if present)
-	heartLibRows, heartErr := db.Query("SELECT HEART_ID, HEART_DESC FROM tsekap_lib_heart ORDER BY SORT_NO, HEART_ID")
-	var heartOrder []struct{ ID, Desc string }
-	if heartErr == nil {
-		defer heartLibRows.Close()
-		for heartLibRows.Next() {
-			var id, desc string
-			heartLibRows.Scan(&id, &desc)
-			heartOrder = append(heartOrder, struct{ ID, Desc string }{ID: id, Desc: desc})
+	if hasPatno {
+		heartLibRows, heartErr := db.Query("SELECT HEART_ID, HEART_DESC FROM tsekap_lib_heart ORDER BY SORT_NO, HEART_ID")
+		var heartOrder []struct{ ID, Desc string }
+		if heartErr == nil {
+			defer heartLibRows.Close()
+			for heartLibRows.Next() {
+				var id, desc string
+				heartLibRows.Scan(&id, &desc)
+				heartOrder = append(heartOrder, struct{ ID, Desc string }{ID: id, Desc: desc})
+			}
 		}
-	}
 
-	// Read saved heart bits
-	var heartSaved string
-	var heartOthers sql.NullString
-	db.QueryRow("SELECT heart_code, others_text FROM patient_pe_heart WHERE patno = ?", patno).Scan(&heartSaved, &heartOthers)
-	heartBits := []string{}
-	if heartSaved != "" {
-		heartBits = strings.Split(heartSaved, "|")
-	}
-
-	for i, h := range heartOrder {
-		isChecked := false
-		if i < len(heartBits) {
-			isChecked = heartBits[i] == "1"
+		// Read saved heart bits
+		var heartSaved string
+		var heartOthers sql.NullString
+		db.QueryRow("SELECT heart_code, others_text FROM patient_pe_heart WHERE patno = ?", patno).Scan(&heartSaved, &heartOthers)
+		heartBits := []string{}
+		if heartSaved != "" {
+			heartBits = strings.Split(heartSaved, "|")
 		}
-		code := "heart_" + h.ID
-		list = append(list, FindingRow{
-			ID:          0,
-			PatientID:   0,
-			Category:    "heart",
-			FindingCode: code,
-			FindingDesc: h.Desc,
-			IsChecked:   isChecked,
-			OthersText:  "",
-		})
-	}
 
-	if heartOthers.Valid && heartOthers.String != "" {
-		list = append(list, FindingRow{
-			ID:          0,
-			PatientID:   0,
-			Category:    "heart",
-			FindingCode: "others",
-			FindingDesc: "Others",
-			IsChecked:   true,
-			OthersText:  heartOthers.String,
-		})
+		for i, h := range heartOrder {
+			isChecked := false
+			if i < len(heartBits) {
+				isChecked = heartBits[i] == "1"
+			}
+			code := "heart_" + h.ID
+			list = append(list, FindingRow{
+				ID:          0,
+				PatientID:   0,
+				Category:    "heart",
+				FindingCode: code,
+				FindingDesc: h.Desc,
+				IsChecked:   isChecked,
+				OthersText:  "",
+			})
+		}
+
+		if heartOthers.Valid && heartOthers.String != "" {
+			list = append(list, FindingRow{
+				ID:          0,
+				PatientID:   0,
+				Category:    "heart",
+				FindingCode: "others",
+				FindingDesc: "Others",
+				IsChecked:   true,
+				OthersText:  heartOthers.String,
+			})
+		}
 	}
 
 	// Now expand ABDOMEN summary into finding rows (if present)
-	abdomenLibRows, abdomenErr := db.Query("SELECT ABDOMEN_ID, ABDOMEN_DESC FROM tsekap_lib_abdomen ORDER BY SORT_NO, ABDOMEN_ID")
-	var abdomenOrder []struct{ ID, Desc string }
-	if abdomenErr == nil {
-		defer abdomenLibRows.Close()
-		for abdomenLibRows.Next() {
-			var id, desc string
-			abdomenLibRows.Scan(&id, &desc)
-			abdomenOrder = append(abdomenOrder, struct{ ID, Desc string }{ID: id, Desc: desc})
+	if hasPatno {
+		abdomenLibRows, abdomenErr := db.Query("SELECT ABDOMEN_ID, ABDOMEN_DESC FROM tsekap_lib_abdomen ORDER BY SORT_NO, ABDOMEN_ID")
+		var abdomenOrder []struct{ ID, Desc string }
+		if abdomenErr == nil {
+			defer abdomenLibRows.Close()
+			for abdomenLibRows.Next() {
+				var id, desc string
+				abdomenLibRows.Scan(&id, &desc)
+				abdomenOrder = append(abdomenOrder, struct{ ID, Desc string }{ID: id, Desc: desc})
+			}
 		}
-	}
 
-	// Read saved abdomen bits
-	var abdomenSaved string
-	var abdomenOthers sql.NullString
-	db.QueryRow("SELECT abdomen_code, others_text FROM patient_pe_abdomen WHERE patno = ?", patno).Scan(&abdomenSaved, &abdomenOthers)
-	abdomenBits := []string{}
-	if abdomenSaved != "" {
-		abdomenBits = strings.Split(abdomenSaved, "|")
-	}
-
-	for i, a := range abdomenOrder {
-		isChecked := false
-		if i < len(abdomenBits) {
-			isChecked = abdomenBits[i] == "1"
+		// Read saved abdomen bits
+		var abdomenSaved string
+		var abdomenOthers sql.NullString
+		db.QueryRow("SELECT abdomen_code, others_text FROM patient_pe_abdomen WHERE patno = ?", patno).Scan(&abdomenSaved, &abdomenOthers)
+		abdomenBits := []string{}
+		if abdomenSaved != "" {
+			abdomenBits = strings.Split(abdomenSaved, "|")
 		}
-		code := "abdomen_" + a.ID
-		list = append(list, FindingRow{
-			ID:          0,
-			PatientID:   0,
-			Category:    "abdomen",
-			FindingCode: code,
-			FindingDesc: a.Desc,
-			IsChecked:   isChecked,
-			OthersText:  "",
-		})
-	}
 
-	if abdomenOthers.Valid && abdomenOthers.String != "" {
-		list = append(list, FindingRow{
-			ID:          0,
-			PatientID:   0,
-			Category:    "abdomen",
-			FindingCode: "others",
-			FindingDesc: "Others",
-			IsChecked:   true,
-			OthersText:  abdomenOthers.String,
-		})
+		for i, a := range abdomenOrder {
+			isChecked := false
+			if i < len(abdomenBits) {
+				isChecked = abdomenBits[i] == "1"
+			}
+			code := "abdomen_" + a.ID
+			list = append(list, FindingRow{
+				ID:          0,
+				PatientID:   0,
+				Category:    "abdomen",
+				FindingCode: code,
+				FindingDesc: a.Desc,
+				IsChecked:   isChecked,
+				OthersText:  "",
+			})
+		}
+
+		if abdomenOthers.Valid && abdomenOthers.String != "" {
+			list = append(list, FindingRow{
+				ID:          0,
+				PatientID:   0,
+				Category:    "abdomen",
+				FindingCode: "others",
+				FindingDesc: "Others",
+				IsChecked:   true,
+				OthersText:  abdomenOthers.String,
+			})
+		}
 	}
 
 	// Now expand HEENT summary into finding rows (if present)
-	heentLibRows, heentErr := db.Query("SELECT HEENT_ID, HEENT_DESC FROM tsekap_lib_heent ORDER BY SORT_NO, HEENT_ID")
-	var heentOrder []struct{ ID, Desc string }
-	if heentErr == nil {
-		defer heentLibRows.Close()
-		for heentLibRows.Next() {
-			var id, desc string
-			heentLibRows.Scan(&id, &desc)
-			heentOrder = append(heentOrder, struct{ ID, Desc string }{ID: id, Desc: desc})
+	if hasPatno {
+		heentLibRows, heentErr := db.Query("SELECT HEENT_ID, HEENT_DESC FROM tsekap_lib_heent ORDER BY SORT_NO, HEENT_ID")
+		var heentOrder []struct{ ID, Desc string }
+		if heentErr == nil {
+			defer heentLibRows.Close()
+			for heentLibRows.Next() {
+				var id, desc string
+				heentLibRows.Scan(&id, &desc)
+				heentOrder = append(heentOrder, struct{ ID, Desc string }{ID: id, Desc: desc})
+			}
 		}
-	}
 
-	// Read saved heent bits
-	var heentSaved string
-	var heentOthers sql.NullString
-	db.QueryRow("SELECT heent_code, others_text FROM patient_pe_heent WHERE patno = ?", patno).Scan(&heentSaved, &heentOthers)
-	heentBits := []string{}
-	if heentSaved != "" {
-		heentBits = strings.Split(heentSaved, "|")
-	}
-
-	for i, h := range heentOrder {
-		isChecked := false
-		if i < len(heentBits) {
-			isChecked = heentBits[i] == "1"
+		// Read saved heent bits
+		var heentSaved string
+		var heentOthers sql.NullString
+		db.QueryRow("SELECT heent_code, others_text FROM patient_pe_heent WHERE patno = ?", patno).Scan(&heentSaved, &heentOthers)
+		heentBits := []string{}
+		if heentSaved != "" {
+			heentBits = strings.Split(heentSaved, "|")
 		}
-		code := "heent_" + h.ID
-		list = append(list, FindingRow{
-			ID:          0,
-			PatientID:   0,
-			Category:    "heent",
-			FindingCode: code,
-			FindingDesc: h.Desc,
-			IsChecked:   isChecked,
-			OthersText:  "",
-		})
-	}
 
-	if heentOthers.Valid && heentOthers.String != "" {
-		list = append(list, FindingRow{
-			ID:          0,
-			PatientID:   0,
-			Category:    "heent",
-			FindingCode: "others",
-			FindingDesc: "Others",
-			IsChecked:   true,
-			OthersText:  heentOthers.String,
-		})
+		for i, h := range heentOrder {
+			isChecked := false
+			if i < len(heentBits) {
+				isChecked = heentBits[i] == "1"
+			}
+			code := "heent_" + h.ID
+			list = append(list, FindingRow{
+				ID:          0,
+				PatientID:   0,
+				Category:    "heent",
+				FindingCode: code,
+				FindingDesc: h.Desc,
+				IsChecked:   isChecked,
+				OthersText:  "",
+			})
+		}
+
+		if heentOthers.Valid && heentOthers.String != "" {
+			list = append(list, FindingRow{
+				ID:          0,
+				PatientID:   0,
+				Category:    "heent",
+				FindingCode: "others",
+				FindingDesc: "Others",
+				IsChecked:   true,
+				OthersText:  heentOthers.String,
+			})
+		}
 	}
 
 	json.NewEncoder(w).Encode(list)
@@ -2306,7 +2326,8 @@ func savePhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 		var patno string
 		db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
 		if patno == "" {
-			patno = patientID
+			http.Error(w, "patient has no case_no; cannot save summary", http.StatusBadRequest)
+			return
 		}
 
 		// Rebuild skin library order
@@ -2368,7 +2389,8 @@ func savePhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 		var patno string
 		db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
 		if patno == "" {
-			patno = patientID
+			http.Error(w, "patient has no case_no; cannot save summary", http.StatusBadRequest)
+			return
 		}
 
 		// Rebuild heart library order
@@ -2430,7 +2452,8 @@ func savePhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 		var patno string
 		db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
 		if patno == "" {
-			patno = patientID
+			http.Error(w, "patient has no case_no; cannot save summary", http.StatusBadRequest)
+			return
 		}
 
 		// Rebuild abdomen library order
@@ -2492,7 +2515,8 @@ func savePhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 		var patno string
 		db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
 		if patno == "" {
-			patno = patientID
+			http.Error(w, "patient has no case_no; cannot save summary", http.StatusBadRequest)
+			return
 		}
 
 		// Rebuild chest library order
@@ -2550,11 +2574,12 @@ func savePhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 
 	// Special-case: if saving HEENT category, store as a summary bit-string
 	if payload.Category == "heent" {
-		// Translate numeric patient ID → case_no (patno)
+		// Translate numeric patient ID → case_no (patno). Do NOT fallback to numeric patientID.
 		var patno string
 		db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
 		if patno == "" {
-			patno = patientID
+			http.Error(w, "patient has no case_no; cannot save summary", http.StatusBadRequest)
+			return
 		}
 
 		// Rebuild heent library order
