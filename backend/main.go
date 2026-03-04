@@ -8,11 +8,13 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/gorilla/mux"
-	"github.com/rs/cors"
-	_ "github.com/go-sql-driver/mysql"
+	"backend/controllers"
 	"backend/models"
 	"backend/routes"
+
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/gorilla/mux"
+	"github.com/rs/cors"
 )
 
 type InventoryItem struct {
@@ -57,6 +59,9 @@ func main() {
 	log.Println("Table 'items' ready")
 
 	createInventoryTable()
+
+	// Set DB for abdomen controller
+	controllers.SetDB(db)
 
 	// Setup router with all routes
 	router := routes.SetupRoutes()

@@ -1,8 +1,9 @@
 package routes
 
 import (
-	"github.com/gorilla/mux"
 	"backend/controllers"
+
+	"github.com/gorilla/mux"
 )
 
 // SetupRoutes configures all application routes
@@ -18,6 +19,9 @@ func SetupRoutes() *mux.Router {
 	router.HandleFunc("/api/items", controllers.CreateItem).Methods("POST")
 	router.HandleFunc("/api/items/{id}", controllers.UpdateItem).Methods("PUT")
 	router.HandleFunc("/api/items/{id}", controllers.DeleteItem).Methods("DELETE")
+
+	// Abdomen routes
+	router.HandleFunc("/api/abdomens", controllers.GetAbdomens).Methods("GET")
 
 	return router
 }
