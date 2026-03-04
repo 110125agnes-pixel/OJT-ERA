@@ -177,6 +177,18 @@ func main() {
 	// Ensure patient_pe_neuro summary table exists (neurological findings stored as pipe-separated 1|0)
 	createPatientPeNeuroTable()
 
+	// Ensure patient_pe_heent summary table exists (HEENT findings stored as pipe-separated 1|0)
+	createPatientPeHeentTable()
+
+	// Ensure patient_pe_chest summary table exists (Chest findings stored as pipe-separated 1|0)
+	createPatientPeChestTable()
+
+	// Ensure patient_pe_heart summary table exists (Heart findings stored as pipe-separated 1|0)
+	createPatientPeHeartTable()
+
+	// Ensure patient_pe_abdomen summary table exists (Abdomen findings stored as pipe-separated 1|0)
+	createPatientPeAbdomenTable()
+
 	// Setup router
 	router := mux.NewRouter()
 
@@ -1661,6 +1673,78 @@ func createPatientPeNeuroTable() {
 	log.Println("✓ patient_pe_neuro table ready")
 }
 
+// createPatientPeHeentTable auto-creates the patient_pe_heent table on backend startup.
+// Schema design:
+//
+//    patno     - patient's case_no, PRIMARY KEY
+//    heent_code - pipe-separated 0/1 string, one bit per option in tsekap_lib_heent order
+//    others_text - optional text saved for 'others' option
+//    date_added, added_by
+func createPatientPeHeentTable() {
+	db.Exec(`CREATE TABLE IF NOT EXISTS patient_pe_heent (
+		patno VARCHAR(50) NOT NULL PRIMARY KEY,
+		heent_code VARCHAR(2000) NOT NULL DEFAULT '',
+		others_text TEXT,
+		date_added DATETIME,
+		added_by VARCHAR(50)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+	log.Println("✓ patient_pe_heent table ready")
+}
+
+// createPatientPeChestTable auto-creates the patient_pe_chest table on backend startup.
+// Schema design:
+//
+//    patno     - patient's case_no, PRIMARY KEY
+//    chest_code - pipe-separated 0/1 string, one bit per option in tsekap_lib_chest order
+//    others_text - optional text saved for 'others' option
+//    date_added, added_by
+func createPatientPeChestTable() {
+	db.Exec(`CREATE TABLE IF NOT EXISTS patient_pe_chest (
+		patno VARCHAR(50) NOT NULL PRIMARY KEY,
+		chest_code VARCHAR(2000) NOT NULL DEFAULT '',
+		others_text TEXT,
+		date_added DATETIME,
+		added_by VARCHAR(50)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+	log.Println("✓ patient_pe_chest table ready")
+}
+
+// createPatientPeHeartTable auto-creates the patient_pe_heart table on backend startup.
+// Schema design:
+//
+//    patno     - patient's case_no, PRIMARY KEY
+//    heart_code - pipe-separated 0/1 string, one bit per option in tsekap_lib_heart order
+//    others_text - optional text saved for 'others' option
+//    date_added, added_by
+func createPatientPeHeartTable() {
+	db.Exec(`CREATE TABLE IF NOT EXISTS patient_pe_heart (
+		patno VARCHAR(50) NOT NULL PRIMARY KEY,
+		heart_code VARCHAR(2000) NOT NULL DEFAULT '',
+		others_text TEXT,
+		date_added DATETIME,
+		added_by VARCHAR(50)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+	log.Println("✓ patient_pe_heart table ready")
+}
+
+// createPatientPeAbdomenTable auto-creates the patient_pe_abdomen table on backend startup.
+// Schema design:
+//
+//    patno     - patient's case_no, PRIMARY KEY
+//    abdomen_code - pipe-separated 0/1 string, one bit per option in tsekap_lib_abdomen order
+//    others_text - optional text saved for 'others' option
+//    date_added, added_by
+func createPatientPeAbdomenTable() {
+	db.Exec(`CREATE TABLE IF NOT EXISTS patient_pe_abdomen (
+		patno VARCHAR(50) NOT NULL PRIMARY KEY,
+		abdomen_code VARCHAR(2000) NOT NULL DEFAULT '',
+		others_text TEXT,
+		date_added DATETIME,
+		added_by VARCHAR(50)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+	log.Println("✓ patient_pe_abdomen table ready")
+}
+
 // ensureMedHistColumns — kept as no-op for compatibility
 func ensureMedHistColumns() {}
 
@@ -1999,7 +2083,205 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// (HEENT expansion removed; HEENT rows are handled via existing tsekap_tbl_prof_pe_findings rows)
+	// Now expand CHEST summary into finding rows (if present)
+	chestLibRows, chestErr := db.Query("SELECT CHEST_ID, CHEST_DESC FROM tsekap_lib_chest ORDER BY SORT_NO, CHEST_ID")
+	var chestOrder []struct{ ID, Desc string }
+	if chestErr == nil {
+		defer chestLibRows.Close()
+		for chestLibRows.Next() {
+			var id, desc string
+			chestLibRows.Scan(&id, &desc)
+			chestOrder = append(chestOrder, struct{ ID, Desc string }{ID: id, Desc: desc})
+		}
+	}
+
+	// Read saved chest bits
+	var chestSaved string
+	var chestOthers sql.NullString
+	db.QueryRow("SELECT chest_code, others_text FROM patient_pe_chest WHERE patno = ?", patno).Scan(&chestSaved, &chestOthers)
+	chestBits := []string{}
+	if chestSaved != "" {
+		chestBits = strings.Split(chestSaved, "|")
+	}
+
+	for i, c := range chestOrder {
+		isChecked := false
+		if i < len(chestBits) {
+			isChecked = chestBits[i] == "1"
+		}
+		code := "chest_" + c.ID
+		list = append(list, FindingRow{
+			ID:          0,
+			PatientID:   0,
+			Category:    "chest",
+			FindingCode: code,
+			FindingDesc: c.Desc,
+			IsChecked:   isChecked,
+			OthersText:  "",
+		})
+	}
+
+	if chestOthers.Valid && chestOthers.String != "" {
+		list = append(list, FindingRow{
+			ID:          0,
+			PatientID:   0,
+			Category:    "chest",
+			FindingCode: "others",
+			FindingDesc: "Others",
+			IsChecked:   true,
+			OthersText:  chestOthers.String,
+		})
+	}
+
+	// Now expand HEART summary into finding rows (if present)
+	heartLibRows, heartErr := db.Query("SELECT HEART_ID, HEART_DESC FROM tsekap_lib_heart ORDER BY SORT_NO, HEART_ID")
+	var heartOrder []struct{ ID, Desc string }
+	if heartErr == nil {
+		defer heartLibRows.Close()
+		for heartLibRows.Next() {
+			var id, desc string
+			heartLibRows.Scan(&id, &desc)
+			heartOrder = append(heartOrder, struct{ ID, Desc string }{ID: id, Desc: desc})
+		}
+	}
+
+	// Read saved heart bits
+	var heartSaved string
+	var heartOthers sql.NullString
+	db.QueryRow("SELECT heart_code, others_text FROM patient_pe_heart WHERE patno = ?", patno).Scan(&heartSaved, &heartOthers)
+	heartBits := []string{}
+	if heartSaved != "" {
+		heartBits = strings.Split(heartSaved, "|")
+	}
+
+	for i, h := range heartOrder {
+		isChecked := false
+		if i < len(heartBits) {
+			isChecked = heartBits[i] == "1"
+		}
+		code := "heart_" + h.ID
+		list = append(list, FindingRow{
+			ID:          0,
+			PatientID:   0,
+			Category:    "heart",
+			FindingCode: code,
+			FindingDesc: h.Desc,
+			IsChecked:   isChecked,
+			OthersText:  "",
+		})
+	}
+
+	if heartOthers.Valid && heartOthers.String != "" {
+		list = append(list, FindingRow{
+			ID:          0,
+			PatientID:   0,
+			Category:    "heart",
+			FindingCode: "others",
+			FindingDesc: "Others",
+			IsChecked:   true,
+			OthersText:  heartOthers.String,
+		})
+	}
+
+	// Now expand ABDOMEN summary into finding rows (if present)
+	abdomenLibRows, abdomenErr := db.Query("SELECT ABDOMEN_ID, ABDOMEN_DESC FROM tsekap_lib_abdomen ORDER BY SORT_NO, ABDOMEN_ID")
+	var abdomenOrder []struct{ ID, Desc string }
+	if abdomenErr == nil {
+		defer abdomenLibRows.Close()
+		for abdomenLibRows.Next() {
+			var id, desc string
+			abdomenLibRows.Scan(&id, &desc)
+			abdomenOrder = append(abdomenOrder, struct{ ID, Desc string }{ID: id, Desc: desc})
+		}
+	}
+
+	// Read saved abdomen bits
+	var abdomenSaved string
+	var abdomenOthers sql.NullString
+	db.QueryRow("SELECT abdomen_code, others_text FROM patient_pe_abdomen WHERE patno = ?", patno).Scan(&abdomenSaved, &abdomenOthers)
+	abdomenBits := []string{}
+	if abdomenSaved != "" {
+		abdomenBits = strings.Split(abdomenSaved, "|")
+	}
+
+	for i, a := range abdomenOrder {
+		isChecked := false
+		if i < len(abdomenBits) {
+			isChecked = abdomenBits[i] == "1"
+		}
+		code := "abdomen_" + a.ID
+		list = append(list, FindingRow{
+			ID:          0,
+			PatientID:   0,
+			Category:    "abdomen",
+			FindingCode: code,
+			FindingDesc: a.Desc,
+			IsChecked:   isChecked,
+			OthersText:  "",
+		})
+	}
+
+	if abdomenOthers.Valid && abdomenOthers.String != "" {
+		list = append(list, FindingRow{
+			ID:          0,
+			PatientID:   0,
+			Category:    "abdomen",
+			FindingCode: "others",
+			FindingDesc: "Others",
+			IsChecked:   true,
+			OthersText:  abdomenOthers.String,
+		})
+	}
+
+	// Now expand HEENT summary into finding rows (if present)
+	heentLibRows, heentErr := db.Query("SELECT HEENT_ID, HEENT_DESC FROM tsekap_lib_heent ORDER BY SORT_NO, HEENT_ID")
+	var heentOrder []struct{ ID, Desc string }
+	if heentErr == nil {
+		defer heentLibRows.Close()
+		for heentLibRows.Next() {
+			var id, desc string
+			heentLibRows.Scan(&id, &desc)
+			heentOrder = append(heentOrder, struct{ ID, Desc string }{ID: id, Desc: desc})
+		}
+	}
+
+	// Read saved heent bits
+	var heentSaved string
+	var heentOthers sql.NullString
+	db.QueryRow("SELECT heent_code, others_text FROM patient_pe_heent WHERE patno = ?", patno).Scan(&heentSaved, &heentOthers)
+	heentBits := []string{}
+	if heentSaved != "" {
+		heentBits = strings.Split(heentSaved, "|")
+	}
+
+	for i, h := range heentOrder {
+		isChecked := false
+		if i < len(heentBits) {
+			isChecked = heentBits[i] == "1"
+		}
+		code := "heent_" + h.ID
+		list = append(list, FindingRow{
+			ID:          0,
+			PatientID:   0,
+			Category:    "heent",
+			FindingCode: code,
+			FindingDesc: h.Desc,
+			IsChecked:   isChecked,
+			OthersText:  "",
+		})
+	}
+
+	if heentOthers.Valid && heentOthers.String != "" {
+		list = append(list, FindingRow{
+			ID:          0,
+			PatientID:   0,
+			Category:    "heent",
+			FindingCode: "others",
+			FindingDesc: "Others",
+			IsChecked:   true,
+			OthersText:  heentOthers.String,
+		})
+	}
 
 	json.NewEncoder(w).Encode(list)
 }
@@ -2073,6 +2355,254 @@ func savePhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 			patno, skinCode, othersText)
 		if execErr != nil {
 			log.Println("savePhysicalExamFindings (skin) error:", execErr)
+			http.Error(w, execErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+		return
+	}
+
+	// Special-case: if saving HEART category, store as a summary bit-string
+	if payload.Category == "heart" {
+		// Translate numeric patient ID → case_no (patno)
+		var patno string
+		db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+		if patno == "" {
+			patno = patientID
+		}
+
+		// Rebuild heart library order
+		libRows, err := db.Query("SELECT HEART_ID FROM tsekap_lib_heart ORDER BY SORT_NO, HEART_ID")
+		if err != nil {
+			log.Println("heart lib query error:", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer libRows.Close()
+		var order []string
+		for libRows.Next() {
+			var id string
+			libRows.Scan(&id)
+			order = append(order, id)
+		}
+
+		// Build lookup map from incoming findings
+		checkedMap := map[string]bool{}
+		var othersText string
+		for _, f := range payload.Findings {
+			if f.FindingCode == "others" {
+				othersText = f.OthersText
+				continue
+			}
+			// incoming finding codes for library items are expected in the form 'heart_<ID>'
+			checkedMap[f.FindingCode] = f.IsChecked
+		}
+
+		// Build bits in library order
+		bits := make([]string, len(order))
+		for i, id := range order {
+			key := "heart_" + id
+			if checkedMap[key] {
+				bits[i] = "1"
+			} else {
+				bits[i] = "0"
+			}
+		}
+		heartCode := strings.Join(bits, "|")
+
+		// UPSERT into patient_pe_heart
+		_, execErr := db.Exec(`INSERT INTO patient_pe_heart (patno, heart_code, others_text, date_added, added_by)
+			VALUES (?, ?, ?, NOW(), 'system')
+			ON DUPLICATE KEY UPDATE heart_code = VALUES(heart_code), others_text = VALUES(others_text), date_added = NOW()`,
+			patno, heartCode, othersText)
+		if execErr != nil {
+			log.Println("savePhysicalExamFindings (heart) error:", execErr)
+			http.Error(w, execErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+		return
+	}
+
+	// Special-case: if saving ABDOMEN category, store as a summary bit-string
+	if payload.Category == "abdomen" {
+		// Translate numeric patient ID → case_no (patno)
+		var patno string
+		db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+		if patno == "" {
+			patno = patientID
+		}
+
+		// Rebuild abdomen library order
+		libRows, err := db.Query("SELECT ABDOMEN_ID FROM tsekap_lib_abdomen ORDER BY SORT_NO, ABDOMEN_ID")
+		if err != nil {
+			log.Println("abdomen lib query error:", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer libRows.Close()
+		var order []string
+		for libRows.Next() {
+			var id string
+			libRows.Scan(&id)
+			order = append(order, id)
+		}
+
+		// Build lookup map from incoming findings
+		checkedMap := map[string]bool{}
+		var othersText string
+		for _, f := range payload.Findings {
+			if f.FindingCode == "others" {
+				othersText = f.OthersText
+				continue
+			}
+			// incoming finding codes for library items are expected in the form 'abdomen_<ID>'
+			checkedMap[f.FindingCode] = f.IsChecked
+		}
+
+		// Build bits in library order
+		bits := make([]string, len(order))
+		for i, id := range order {
+			key := "abdomen_" + id
+			if checkedMap[key] {
+				bits[i] = "1"
+			} else {
+				bits[i] = "0"
+			}
+		}
+		abdomenCode := strings.Join(bits, "|")
+
+		// UPSERT into patient_pe_abdomen
+		_, execErr := db.Exec(`INSERT INTO patient_pe_abdomen (patno, abdomen_code, others_text, date_added, added_by)
+			VALUES (?, ?, ?, NOW(), 'system')
+			ON DUPLICATE KEY UPDATE abdomen_code = VALUES(abdomen_code), others_text = VALUES(others_text), date_added = NOW()`,
+			patno, abdomenCode, othersText)
+		if execErr != nil {
+			log.Println("savePhysicalExamFindings (abdomen) error:", execErr)
+			http.Error(w, execErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+		return
+	}
+
+	// Special-case: if saving CHEST category, store as a summary bit-string
+	if payload.Category == "chest" {
+		// Translate numeric patient ID → case_no (patno)
+		var patno string
+		db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+		if patno == "" {
+			patno = patientID
+		}
+
+		// Rebuild chest library order
+		libRows, err := db.Query("SELECT CHEST_ID FROM tsekap_lib_chest ORDER BY SORT_NO, CHEST_ID")
+		if err != nil {
+			log.Println("chest lib query error:", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer libRows.Close()
+		var order []string
+		for libRows.Next() {
+			var id string
+			libRows.Scan(&id)
+			order = append(order, id)
+		}
+
+		// Build lookup map from incoming findings
+		checkedMap := map[string]bool{}
+		var othersText string
+		for _, f := range payload.Findings {
+			if f.FindingCode == "others" {
+				othersText = f.OthersText
+				continue
+			}
+			// incoming finding codes for library items are expected in the form 'chest_<ID>'
+			checkedMap[f.FindingCode] = f.IsChecked
+		}
+
+		// Build bits in library order
+		bits := make([]string, len(order))
+		for i, id := range order {
+			key := "chest_" + id
+			if checkedMap[key] {
+				bits[i] = "1"
+			} else {
+				bits[i] = "0"
+			}
+		}
+		chestCode := strings.Join(bits, "|")
+
+		// UPSERT into patient_pe_chest
+		_, execErr := db.Exec(`INSERT INTO patient_pe_chest (patno, chest_code, others_text, date_added, added_by)
+			VALUES (?, ?, ?, NOW(), 'system')
+			ON DUPLICATE KEY UPDATE chest_code = VALUES(chest_code), others_text = VALUES(others_text), date_added = NOW()`,
+			patno, chestCode, othersText)
+		if execErr != nil {
+			log.Println("savePhysicalExamFindings (chest) error:", execErr)
+			http.Error(w, execErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+		return
+	}
+
+	// Special-case: if saving HEENT category, store as a summary bit-string
+	if payload.Category == "heent" {
+		// Translate numeric patient ID → case_no (patno)
+		var patno string
+		db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+		if patno == "" {
+			patno = patientID
+		}
+
+		// Rebuild heent library order
+		libRows, err := db.Query("SELECT HEENT_ID FROM tsekap_lib_heent ORDER BY SORT_NO, HEENT_ID")
+		if err != nil {
+			log.Println("heent lib query error:", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer libRows.Close()
+		var order []string
+		for libRows.Next() {
+			var id string
+			libRows.Scan(&id)
+			order = append(order, id)
+		}
+
+		// Build lookup map from incoming findings
+		checkedMap := map[string]bool{}
+		var othersText string
+		for _, f := range payload.Findings {
+			if f.FindingCode == "others" {
+				othersText = f.OthersText
+				continue
+			}
+			// incoming finding codes for library items are expected in the form 'heent_<ID>'
+			checkedMap[f.FindingCode] = f.IsChecked
+		}
+
+		// Build bits in library order
+		bits := make([]string, len(order))
+		for i, id := range order {
+			key := "heent_" + id
+			if checkedMap[key] {
+				bits[i] = "1"
+			} else {
+				bits[i] = "0"
+			}
+		}
+		heentCode := strings.Join(bits, "|")
+
+		// UPSERT into patient_pe_heent
+		_, execErr := db.Exec(`INSERT INTO patient_pe_heent (patno, heent_code, others_text, date_added, added_by)
+			VALUES (?, ?, ?, NOW(), 'system')
+			ON DUPLICATE KEY UPDATE heent_code = VALUES(heent_code), others_text = VALUES(others_text), date_added = NOW()`,
+			patno, heentCode, othersText)
+		if execErr != nil {
+			log.Println("savePhysicalExamFindings (heent) error:", execErr)
 			http.Error(w, execErr.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -2275,18 +2805,16 @@ func savePhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only insert checked findings (or "others" with text)
+	// Insert all findings with explicit is_checked values (store 1 for checked, 0 for unchecked)
 	for _, f := range payload.Findings {
-		if f.IsChecked {
-			_, err := db.Exec(`INSERT INTO tsekap_tbl_prof_pe_findings 
-				(patient_id, category, finding_code, finding_desc, is_checked, others_text)
-				VALUES (?, ?, ?, ?, ?, ?)`,
-				patientID, payload.Category, f.FindingCode, f.FindingDesc, true, f.OthersText)
-			if err != nil {
-				log.Println("Insert finding error:", err)
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
+		_, err := db.Exec(`INSERT INTO tsekap_tbl_prof_pe_findings 
+			(patient_id, category, finding_code, finding_desc, is_checked, others_text)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			patientID, payload.Category, f.FindingCode, f.FindingDesc, f.IsChecked, f.OthersText)
+		if err != nil {
+			log.Println("Insert finding error:", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	}
 	json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})

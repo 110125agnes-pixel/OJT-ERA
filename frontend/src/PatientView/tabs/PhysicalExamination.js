@@ -306,13 +306,15 @@ function PhysicalExamination({ patientId }) {
       // save findings per category
       for (const catKey of Object.keys(examFindings)) {
         const catFindings = examFindings[catKey] || {};
+        // Send all findings (include unchecked ones) so backend can store explicit 0/1
         const findings = Object.keys(catFindings)
-          .filter((k) => k !== "othersText" && k !== "others" && !!catFindings[k])
-          .map((k) => ({ finding_code: k, finding_desc: k, is_checked: true, others_text: "" }));
-
-        if (catFindings.others) {
-          findings.push({ finding_code: "others", finding_desc: "Others", is_checked: true, others_text: catFindings.othersText || "" });
-        }
+          .filter((k) => k !== "othersText")
+          .map((k) => {
+            if (k === "others") {
+              return { finding_code: "others", finding_desc: "Others", is_checked: !!catFindings.others, others_text: catFindings.othersText || "" };
+            }
+            return { finding_code: k, finding_desc: k, is_checked: !!catFindings[k], others_text: "" };
+          });
 
         await axios.post(`${API_BASE}/api/patients/${patientId}/physical-exam/findings`, { category: catKey, findings });
       }
