@@ -2045,9 +2045,11 @@ func savePhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 		// Build lookup map from incoming findings
 		checkedMap := map[string]bool{}
 		var othersText string
+		var othersChecked bool
 		for _, f := range payload.Findings {
 			if f.FindingCode == "others" {
 				othersText = f.OthersText
+				othersChecked = f.IsChecked
 				continue
 			}
 			// incoming finding codes for library items are expected in the form 'skin_<ID>'
@@ -2068,13 +2070,26 @@ func savePhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 
 		// UPSERT into patient_pe_skin
 		_, execErr := db.Exec(`INSERT INTO patient_pe_skin (patno, skin_code, others_text, date_added, added_by)
-			VALUES (?, ?, ?, NOW(), 'system')
-			ON DUPLICATE KEY UPDATE skin_code = VALUES(skin_code), others_text = VALUES(others_text), date_added = NOW()`,
+						VALUES (?, ?, ?, NOW(), 'system')
+						ON DUPLICATE KEY UPDATE skin_code = VALUES(skin_code), others_text = VALUES(others_text), date_added = NOW()`,
 			patno, skinCode, othersText)
 		if execErr != nil {
 			log.Println("savePhysicalExamFindings (skin) error:", execErr)
 			http.Error(w, execErr.Error(), http.StatusInternalServerError)
 			return
+		}
+		// Mirror the 'others' checkbox into tsekap_tbl_prof_pe_findings so is_checked reflects user click
+		// Remove any existing 'others' row for this patient/category then insert when checked
+		_, _ = db.Exec(`DELETE FROM tsekap_tbl_prof_pe_findings WHERE patient_id = ? AND category = ? AND finding_code = 'others'`, patientID, "skin")
+		if othersChecked {
+			_, insertErr := db.Exec(`INSERT INTO tsekap_tbl_prof_pe_findings (patient_id, category, finding_code, finding_desc, is_checked, others_text)
+						VALUES (?, ?, 'others', 'Others', ?, ?)`,
+				patientID, "skin", true, othersText)
+			if insertErr != nil {
+				log.Println("savePhysicalExamFindings (skin mirror others) error:", insertErr)
+				http.Error(w, insertErr.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 		json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
 		return
