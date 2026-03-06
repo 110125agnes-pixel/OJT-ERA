@@ -188,6 +188,8 @@ func main() {
 
 	// Ensure patient_pe_abdomen summary table exists (Abdomen findings stored as pipe-separated 1|0)
 	createPatientPeAbdomenTable()
+	// Ensure patient_femalehistory table exists (stores Female tab data)
+	createPatientFemaleHistoryTable()
 
 	// Setup router
 	router := mux.NewRouter()
@@ -261,6 +263,11 @@ func main() {
 	// Immunization Library
 	router.HandleFunc("/api/patients/{patientId}/immunization", getImmunization).Methods("GET")
 	router.HandleFunc("/api/patients/{patientId}/immunization", saveImmunization).Methods("POST")
+
+	router.HandleFunc("/api/patients/{patientId}/female-history", getFemaleHistory).Methods("GET")
+	router.HandleFunc("/api/patients/{patientId}/female-history", saveFemaleHistory).Methods("POST")
+
+	////////
 
 	// CORS middleware
 	handler := cors.New(cors.Options{
@@ -956,13 +963,13 @@ func getImmunization(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	patientID := mux.Vars(r)["patientId"]
 
-		// Translate numeric patient ID → case_no (patno)
-		var patno string
-		db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
-		if patno == "" {
-			http.Error(w, "patient has no case_no; cannot save summary", http.StatusBadRequest)
-			return
-		}
+	// Translate numeric patient ID → case_no (patno)
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		http.Error(w, "patient has no case_no; cannot save summary", http.StatusBadRequest)
+		return
+	}
 
 	// Build library order: child, young, preg, elderly (preserves positions)
 	type libEntry struct{ Code, Name, Category string }
@@ -1267,13 +1274,13 @@ func saveImmunization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-		// Translate numeric patient ID → case_no (patno)
-		var patno string
-		db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
-		if patno == "" {
-			http.Error(w, "patient has no case_no; cannot save summary", http.StatusBadRequest)
-			return
-		}
+	// Translate numeric patient ID → case_no (patno)
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		http.Error(w, "patient has no case_no; cannot save summary", http.StatusBadRequest)
+		return
+	}
 
 	// Rebuild per-category library orders (same order as getImmunization)
 	childOrder := []string{}
@@ -1407,6 +1414,383 @@ func getPatient(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(p)
+}
+
+// ─── FEMALE HISTORY ──────────────────────────────────────────────────────────
+
+// createPatientFemaleHistoryTable auto-creates the patient_femalehistory table on backend startup.
+func createPatientFemaleHistoryTable() {
+	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS patient_femalehistory (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		patno VARCHAR(50) NOT NULL UNIQUE,
+		menarche_age INT,
+		last_menstrual VARCHAR(20),
+		period_duration_days INT,
+		cycle_length_days INT,
+		pads_per_day INT,
+		sexual_onset_age INT,
+		birth_control_used VARCHAR(100),
+		is_menopause TINYINT(1) DEFAULT 0,
+		menopause_age INT,
+		is_menstrual_applicable TINYINT(1) DEFAULT 0,
+		gravidity INT,
+		parity INT,
+		delivery_type VARCHAR(100),
+		full_term_pregnancy_count INT,
+		premature_pregnancy_count INT,
+		abortion_count INT,
+		living_children INT,
+		preg_induced_htn TINYINT(1) DEFAULT 0,
+		has_family_planning TINYINT(1) DEFAULT 0,
+		is_preg_history_applicable TINYINT(1) DEFAULT 0,
+		notes TEXT,
+		date_added DATETIME,
+		added_by VARCHAR(100)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+	if err != nil {
+		log.Println("createPatientFemaleHistoryTable error:", err)
+	} else {
+		log.Println("patient_femalehistory table ready")
+	}
+}
+
+// getFemaleHistory handles GET /api/patients/{patientId}/female-history
+// Returns the stored female history row (structured columns) for the given patient.
+func getFemaleHistory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	patientID := mux.Vars(r)["patientId"]
+
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		patno = patientID
+	}
+
+	row := db.QueryRow(`SELECT menarche_age, last_menstrual, period_duration_days, cycle_length_days,
+		pads_per_day, sexual_onset_age, birth_control_used, is_menopause, menopause_age, is_menstrual_applicable,
+		gravidity, parity, delivery_type, full_term_pregnancy_count, premature_pregnancy_count, abortion_count,
+		living_children, preg_induced_htn, has_family_planning, is_preg_history_applicable, notes, date_added, added_by
+		FROM patient_femalehistory WHERE patno = ?`, patno)
+
+	var fh = map[string]interface{}{}
+	var (
+		menarcheAge, periodDuration, cycleLength, padsPerDay, sexualOnset               sql.NullInt64
+		isMenopause, menopauseAge, isMenstrualApplicable                                sql.NullInt64
+		gravidity, parity, fullTermCount, prematureCount, abortionCount, livingChildren sql.NullInt64
+		pregInducedHTN, hasFamilyPlanning, isPregApplicable                             sql.NullInt64
+		lastMenstrual, birthControl, deliveryType, notes, dateAdded, addedBy            sql.NullString
+	)
+
+	err := row.Scan(&menarcheAge, &lastMenstrual, &periodDuration, &cycleLength,
+		&padsPerDay, &sexualOnset, &birthControl, &isMenopause, &menopauseAge, &isMenstrualApplicable,
+		&gravidity, &parity, &deliveryType, &fullTermCount, &prematureCount, &abortionCount,
+		&livingChildren, &pregInducedHTN, &hasFamilyPlanning, &isPregApplicable, &notes, &dateAdded, &addedBy)
+	if err != nil {
+		log.Printf("getFemaleHistory: no row found for patno=%s (patientID=%s)", patno, patientID)
+		json.NewEncoder(w).Encode(map[string]interface{}{})
+		return
+	}
+
+	trimDate := func(s string) string {
+		if len(s) > 10 {
+			return s[:10]
+		}
+		return s
+	}
+
+	fh["ageOfFirstMenstruation"] = ""
+	if menarcheAge.Valid {
+		fh["ageOfFirstMenstruation"] = fmt.Sprintf("%d", menarcheAge.Int64)
+	}
+	fh["dateOfLastMenstrualPeriod"] = ""
+	if lastMenstrual.Valid {
+		fh["dateOfLastMenstrualPeriod"] = trimDate(lastMenstrual.String)
+	}
+	fh["durationOfMenstrualPeriod"] = ""
+	if periodDuration.Valid {
+		fh["durationOfMenstrualPeriod"] = fmt.Sprintf("%d", periodDuration.Int64)
+	}
+	fh["intervalCycleOfMenstruation"] = ""
+	if cycleLength.Valid {
+		fh["intervalCycleOfMenstruation"] = fmt.Sprintf("%d", cycleLength.Int64)
+	}
+	fh["numberOfPadsPerDay"] = ""
+	if padsPerDay.Valid {
+		fh["numberOfPadsPerDay"] = fmt.Sprintf("%d", padsPerDay.Int64)
+	}
+	fh["onsetOfSexualIntercourse"] = ""
+	if sexualOnset.Valid {
+		fh["onsetOfSexualIntercourse"] = fmt.Sprintf("%d", sexualOnset.Int64)
+	}
+	fh["birthControlMethod"] = ""
+	if birthControl.Valid {
+		fh["birthControlMethod"] = birthControl.String
+	}
+	fh["isMenopause"] = false
+	if isMenopause.Valid {
+		fh["isMenopause"] = isMenopause.Int64 == 1
+	}
+	fh["ageOfMenopause"] = ""
+	if menopauseAge.Valid {
+		fh["ageOfMenopause"] = fmt.Sprintf("%d", menopauseAge.Int64)
+	}
+	fh["isMenstrualHistoryApplicable"] = false
+	if isMenstrualApplicable.Valid {
+		fh["isMenstrualHistoryApplicable"] = isMenstrualApplicable.Int64 == 1
+	}
+	fh["numberOfPregnancyToDate"] = ""
+	if gravidity.Valid {
+		fh["numberOfPregnancyToDate"] = fmt.Sprintf("%d", gravidity.Int64)
+	}
+	fh["numberOfDeliveryToDate"] = ""
+	if parity.Valid {
+		fh["numberOfDeliveryToDate"] = fmt.Sprintf("%d", parity.Int64)
+	}
+	fh["typeOfDelivery"] = ""
+	if deliveryType.Valid {
+		fh["typeOfDelivery"] = deliveryType.String
+	}
+	fh["numberOfFullTermPregnancy"] = ""
+	if fullTermCount.Valid {
+		fh["numberOfFullTermPregnancy"] = fmt.Sprintf("%d", fullTermCount.Int64)
+	}
+	fh["numberOfPrematurePregnancy"] = ""
+	if prematureCount.Valid {
+		fh["numberOfPrematurePregnancy"] = fmt.Sprintf("%d", prematureCount.Int64)
+	}
+	fh["numberOfAbortion"] = ""
+	if abortionCount.Valid {
+		fh["numberOfAbortion"] = fmt.Sprintf("%d", abortionCount.Int64)
+	}
+	fh["numberOfLivingChildren"] = ""
+	if livingChildren.Valid {
+		fh["numberOfLivingChildren"] = fmt.Sprintf("%d", livingChildren.Int64)
+	}
+	fh["pregnancyInducedHypertension"] = false
+	if pregInducedHTN.Valid {
+		fh["pregnancyInducedHypertension"] = pregInducedHTN.Int64 == 1
+	}
+	fh["accessToFamilyPlanningCounselling"] = false
+	if hasFamilyPlanning.Valid {
+		fh["accessToFamilyPlanningCounselling"] = hasFamilyPlanning.Int64 == 1
+	}
+	fh["isPregnancyHistoryApplicable"] = false
+	if isPregApplicable.Valid {
+		fh["isPregnancyHistoryApplicable"] = isPregApplicable.Int64 == 1
+	}
+	fh["notes"] = ""
+	if notes.Valid {
+		fh["notes"] = notes.String
+	}
+	log.Printf("getFemaleHistory: returning data for patno=%s patientID=%s: %+v", patno, patientID, fh)
+	json.NewEncoder(w).Encode(fh)
+}
+
+// saveFemaleHistory handles POST /api/patients/{patientId}/female-history
+// Accepts a JSON payload matching the frontend state and upserts into patient_femalehistory
+func saveFemaleHistory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	patientID := mux.Vars(r)["patientId"]
+
+	var payload map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		patno = patientID
+	}
+
+	toInt := func(k string) interface{} {
+		if v, ok := payload[k]; ok && v != nil && v != "" {
+			switch t := v.(type) {
+			case float64:
+				return int(t)
+			case string:
+				if t == "" {
+					return nil
+				}
+				if i, err := strconv.Atoi(t); err == nil {
+					return i
+				}
+			}
+		}
+		return nil
+	}
+	toStr := func(k string) interface{} {
+		if v, ok := payload[k]; ok && v != nil {
+			return fmt.Sprintf("%v", v)
+		}
+		return nil
+	}
+	toBoolInt := func(k string) int {
+		if v, ok := payload[k]; ok && v != nil {
+			if b, ok2 := v.(bool); ok2 {
+				if b {
+					return 1
+				}
+				return 0
+			}
+			if s, ok3 := v.(string); ok3 {
+				if s == "true" {
+					return 1
+				}
+				return 0
+			}
+		}
+		return 0
+	}
+
+	log.Printf("saveFemaleHistory: received payload for patientID=%s patno=%s: %+v", patientID, patno, payload)
+
+	_, execErr := db.Exec(`INSERT INTO patient_femalehistory (
+		patno, menarche_age, last_menstrual, period_duration_days, cycle_length_days,
+		pads_per_day, sexual_onset_age, birth_control_used, is_menopause, menopause_age, is_menstrual_applicable,
+		gravidity, parity, delivery_type, full_term_pregnancy_count, premature_pregnancy_count, abortion_count,
+		living_children, preg_induced_htn, has_family_planning, is_preg_history_applicable, notes, date_added, added_by
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'system')
+	ON DUPLICATE KEY UPDATE
+		menarche_age = VALUES(menarche_age), last_menstrual = VALUES(last_menstrual), period_duration_days = VALUES(period_duration_days),
+		cycle_length_days = VALUES(cycle_length_days), pads_per_day = VALUES(pads_per_day), sexual_onset_age = VALUES(sexual_onset_age),
+		birth_control_used = VALUES(birth_control_used), is_menopause = VALUES(is_menopause), menopause_age = VALUES(menopause_age),
+		is_menstrual_applicable = VALUES(is_menstrual_applicable), gravidity = VALUES(gravidity), parity = VALUES(parity),
+		delivery_type = VALUES(delivery_type), full_term_pregnancy_count = VALUES(full_term_pregnancy_count),
+		premature_pregnancy_count = VALUES(premature_pregnancy_count), abortion_count = VALUES(abortion_count),
+		living_children = VALUES(living_children), preg_induced_htn = VALUES(preg_induced_htn), has_family_planning = VALUES(has_family_planning),
+		is_preg_history_applicable = VALUES(is_preg_history_applicable), notes = VALUES(notes), date_added = NOW()`,
+		patno,
+		toInt("ageOfFirstMenstruation"), toStr("dateOfLastMenstrualPeriod"), toInt("durationOfMenstrualPeriod"), toInt("intervalCycleOfMenstruation"),
+		toInt("numberOfPadsPerDay"), toInt("onsetOfSexualIntercourse"), toStr("birthControlMethod"), toBoolInt("isMenopause"), toInt("ageOfMenopause"), toBoolInt("isMenstrualHistoryApplicable"),
+		toInt("numberOfPregnancyToDate"), toInt("numberOfDeliveryToDate"), toStr("typeOfDelivery"), toInt("numberOfFullTermPregnancy"), toInt("numberOfPrematurePregnancy"), toInt("numberOfAbortion"),
+		toInt("numberOfLivingChildren"), toBoolInt("pregnancyInducedHypertension"), toBoolInt("accessToFamilyPlanningCounselling"), toBoolInt("isPregnancyHistoryApplicable"), toStr("notes"))
+
+	if execErr != nil {
+		log.Println("saveFemaleHistory error:", execErr)
+		http.Error(w, execErr.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Re-query and return the saved row (same shape as GET)
+	row2 := db.QueryRow(`SELECT menarche_age, last_menstrual, period_duration_days, cycle_length_days,
+		pads_per_day, sexual_onset_age, birth_control_used, is_menopause, menopause_age, is_menstrual_applicable,
+		gravidity, parity, delivery_type, full_term_pregnancy_count, premature_pregnancy_count, abortion_count,
+		living_children, preg_induced_htn, has_family_planning, is_preg_history_applicable, notes, date_added, added_by
+		FROM patient_femalehistory WHERE patno = ?`, patno)
+
+	var (
+		m2, pd2, cl2, pp2, so2                      sql.NullInt64
+		im2, ma2, ima2                              sql.NullInt64
+		g2, p2, ft2, prem2, ab2, lc2                sql.NullInt64
+		pih2, hfp2, ipa2                            sql.NullInt64
+		lm2, bc2, dt2, notes2, dateAdded2, addedBy2 sql.NullString
+	)
+
+	err2 := row2.Scan(&m2, &lm2, &pd2, &cl2,
+		&pp2, &so2, &bc2, &im2, &ma2, &ima2,
+		&g2, &p2, &dt2, &ft2, &prem2, &ab2,
+		&lc2, &pih2, &hfp2, &ipa2, &notes2, &dateAdded2, &addedBy2)
+	if err2 != nil {
+		json.NewEncoder(w).Encode(map[string]string{"message": "saved"})
+		return
+	}
+
+	trimDate2 := func(s string) string {
+		if len(s) > 10 {
+			return s[:10]
+		}
+		return s
+	}
+
+	result := map[string]interface{}{}
+	result["ageOfFirstMenstruation"] = ""
+	if m2.Valid {
+		result["ageOfFirstMenstruation"] = fmt.Sprintf("%d", m2.Int64)
+	}
+	result["dateOfLastMenstrualPeriod"] = ""
+	if lm2.Valid {
+		result["dateOfLastMenstrualPeriod"] = trimDate2(lm2.String)
+	}
+	result["durationOfMenstrualPeriod"] = ""
+	if pd2.Valid {
+		result["durationOfMenstrualPeriod"] = fmt.Sprintf("%d", pd2.Int64)
+	}
+	result["intervalCycleOfMenstruation"] = ""
+	if cl2.Valid {
+		result["intervalCycleOfMenstruation"] = fmt.Sprintf("%d", cl2.Int64)
+	}
+	result["numberOfPadsPerDay"] = ""
+	if pp2.Valid {
+		result["numberOfPadsPerDay"] = fmt.Sprintf("%d", pp2.Int64)
+	}
+	result["onsetOfSexualIntercourse"] = ""
+	if so2.Valid {
+		result["onsetOfSexualIntercourse"] = fmt.Sprintf("%d", so2.Int64)
+	}
+	result["birthControlMethod"] = ""
+	if bc2.Valid {
+		result["birthControlMethod"] = bc2.String
+	}
+	result["isMenopause"] = false
+	if im2.Valid {
+		result["isMenopause"] = im2.Int64 == 1
+	}
+	result["ageOfMenopause"] = ""
+	if ma2.Valid {
+		result["ageOfMenopause"] = fmt.Sprintf("%d", ma2.Int64)
+	}
+	result["isMenstrualHistoryApplicable"] = false
+	if ima2.Valid {
+		result["isMenstrualHistoryApplicable"] = ima2.Int64 == 1
+	}
+	result["numberOfPregnancyToDate"] = ""
+	if g2.Valid {
+		result["numberOfPregnancyToDate"] = fmt.Sprintf("%d", g2.Int64)
+	}
+	result["numberOfDeliveryToDate"] = ""
+	if p2.Valid {
+		result["numberOfDeliveryToDate"] = fmt.Sprintf("%d", p2.Int64)
+	}
+	result["typeOfDelivery"] = ""
+	if dt2.Valid {
+		result["typeOfDelivery"] = dt2.String
+	}
+	result["numberOfFullTermPregnancy"] = ""
+	if ft2.Valid {
+		result["numberOfFullTermPregnancy"] = fmt.Sprintf("%d", ft2.Int64)
+	}
+	result["numberOfPrematurePregnancy"] = ""
+	if prem2.Valid {
+		result["numberOfPrematurePregnancy"] = fmt.Sprintf("%d", prem2.Int64)
+	}
+	result["numberOfAbortion"] = ""
+	if ab2.Valid {
+		result["numberOfAbortion"] = fmt.Sprintf("%d", ab2.Int64)
+	}
+	result["numberOfLivingChildren"] = ""
+	if lc2.Valid {
+		result["numberOfLivingChildren"] = fmt.Sprintf("%d", lc2.Int64)
+	}
+	result["pregnancyInducedHypertension"] = false
+	if pih2.Valid {
+		result["pregnancyInducedHypertension"] = pih2.Int64 == 1
+	}
+	result["accessToFamilyPlanningCounselling"] = false
+	if hfp2.Valid {
+		result["accessToFamilyPlanningCounselling"] = hfp2.Int64 == 1
+	}
+	result["isPregnancyHistoryApplicable"] = false
+	if ipa2.Valid {
+		result["isPregnancyHistoryApplicable"] = ipa2.Int64 == 1
+	}
+	result["notes"] = ""
+	if notes2.Valid {
+		result["notes"] = notes2.String
+	}
+	log.Printf("saveFemaleHistory: saved and returning data for patno=%s", patno)
+	json.NewEncoder(w).Encode(result)
 }
 
 func getPatients(w http.ResponseWriter, r *http.Request) {
@@ -1678,10 +2062,10 @@ func createPatientPeNeuroTable() {
 // createPatientPeHeentTable auto-creates the patient_pe_heent table on backend startup.
 // Schema design:
 //
-//    patno     - patient's case_no, PRIMARY KEY
-//    heent_code - pipe-separated 0/1 string, one bit per option in tsekap_lib_heent order
-//    others_text - optional text saved for 'others' option
-//    date_added, added_by
+//	patno     - patient's case_no, PRIMARY KEY
+//	heent_code - pipe-separated 0/1 string, one bit per option in tsekap_lib_heent order
+//	others_text - optional text saved for 'others' option
+//	date_added, added_by
 func createPatientPeHeentTable() {
 	db.Exec(`CREATE TABLE IF NOT EXISTS patient_pe_heent (
 		patno VARCHAR(50) NOT NULL PRIMARY KEY,
@@ -1696,10 +2080,10 @@ func createPatientPeHeentTable() {
 // createPatientPeChestTable auto-creates the patient_pe_chest table on backend startup.
 // Schema design:
 //
-//    patno     - patient's case_no, PRIMARY KEY
-//    chest_code - pipe-separated 0/1 string, one bit per option in tsekap_lib_chest order
-//    others_text - optional text saved for 'others' option
-//    date_added, added_by
+//	patno     - patient's case_no, PRIMARY KEY
+//	chest_code - pipe-separated 0/1 string, one bit per option in tsekap_lib_chest order
+//	others_text - optional text saved for 'others' option
+//	date_added, added_by
 func createPatientPeChestTable() {
 	db.Exec(`CREATE TABLE IF NOT EXISTS patient_pe_chest (
 		patno VARCHAR(50) NOT NULL PRIMARY KEY,
@@ -1714,10 +2098,10 @@ func createPatientPeChestTable() {
 // createPatientPeHeartTable auto-creates the patient_pe_heart table on backend startup.
 // Schema design:
 //
-//    patno     - patient's case_no, PRIMARY KEY
-//    heart_code - pipe-separated 0/1 string, one bit per option in tsekap_lib_heart order
-//    others_text - optional text saved for 'others' option
-//    date_added, added_by
+//	patno     - patient's case_no, PRIMARY KEY
+//	heart_code - pipe-separated 0/1 string, one bit per option in tsekap_lib_heart order
+//	others_text - optional text saved for 'others' option
+//	date_added, added_by
 func createPatientPeHeartTable() {
 	db.Exec(`CREATE TABLE IF NOT EXISTS patient_pe_heart (
 		patno VARCHAR(50) NOT NULL PRIMARY KEY,
@@ -1732,10 +2116,10 @@ func createPatientPeHeartTable() {
 // createPatientPeAbdomenTable auto-creates the patient_pe_abdomen table on backend startup.
 // Schema design:
 //
-//    patno     - patient's case_no, PRIMARY KEY
-//    abdomen_code - pipe-separated 0/1 string, one bit per option in tsekap_lib_abdomen order
-//    others_text - optional text saved for 'others' option
-//    date_added, added_by
+//	patno     - patient's case_no, PRIMARY KEY
+//	abdomen_code - pipe-separated 0/1 string, one bit per option in tsekap_lib_abdomen order
+//	others_text - optional text saved for 'others' option
+//	date_added, added_by
 func createPatientPeAbdomenTable() {
 	db.Exec(`CREATE TABLE IF NOT EXISTS patient_pe_abdomen (
 		patno VARCHAR(50) NOT NULL PRIMARY KEY,
@@ -1786,20 +2170,47 @@ func createPhysicalExamTables() {
 	log.Println("✓ Physical exam tables ready")
 }
 
+// resolvePatientIDParam accepts a path parameter which may be a numeric patient ID
+// or a case_no (patno). If a patno is provided, it looks up the numeric ID.
+func resolvePatientIDParam(param string) (string, error) {
+	// if it's already numeric, return as-is
+	if _, err := strconv.Atoi(param); err == nil {
+		return param, nil
+	}
+
+	// otherwise treat as patno (case_no) and lookup numeric id
+	var id int
+	err := db.QueryRow("SELECT id FROM patients WHERE case_no = ?", param).Scan(&id)
+	if err != nil {
+		return "", err
+	}
+	return strconv.Itoa(id), nil
+}
+
 // ==================== PHYSICAL EXAM HANDLERS ====================
 
 func getPhysicalExamGeneral(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	patientID := mux.Vars(r)["patientId"]
+	raw := mux.Vars(r)["patientId"]
+	patientID, err := resolvePatientIDParam(raw)
+	if err != nil {
+		http.Error(w, "patient not found", http.StatusNotFound)
+		return
+	}
 
 	var g PhysicalExamGeneral
-	err := db.QueryRow(`SELECT id, patient_id, general_survey, remarks, blood_type 
+	// Load general fields (DB uses numeric patient_id internally)
+	err = db.QueryRow(`SELECT general_survey, remarks, blood_type 
 		FROM tsekap_tbl_prof_pe_general WHERE patient_id = ?`, patientID).Scan(
-		&g.ID, &g.PatientID, &g.GeneralSurvey, &g.Remarks, &g.BloodType)
+		&g.GeneralSurvey, &g.Remarks, &g.BloodType)
 
 	if err == sql.ErrNoRows {
 		// Return defaults if nothing saved yet
+		// still include patno for consistency
+		var patno string
+		db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
 		json.NewEncoder(w).Encode(PhysicalExamGeneral{
+			Patno:         patno,
 			GeneralSurvey: "awake",
 			BloodType:     "A+",
 		})
@@ -1808,12 +2219,21 @@ func getPhysicalExamGeneral(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// attach case_no (patno) to response
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	g.Patno = patno
 	json.NewEncoder(w).Encode(g)
 }
 
 func savePhysicalExamGeneral(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	patientID := mux.Vars(r)["patientId"]
+	raw := mux.Vars(r)["patientId"]
+	patientID, err := resolvePatientIDParam(raw)
+	if err != nil {
+		http.Error(w, "patient not found", http.StatusNotFound)
+		return
+	}
 
 	var g PhysicalExamGeneral
 	if err := json.NewDecoder(r.Body).Decode(&g); err != nil {
@@ -1821,7 +2241,7 @@ func savePhysicalExamGeneral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := db.Exec(`INSERT INTO tsekap_tbl_prof_pe_general 
+	_, err = db.Exec(`INSERT INTO tsekap_tbl_prof_pe_general 
 		(patient_id, general_survey, remarks, blood_type)
 		VALUES (?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
@@ -1848,12 +2268,23 @@ type FindingPayload struct {
 
 func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	patientID := mux.Vars(r)["patientId"]
+	raw := mux.Vars(r)["patientId"]
+	patientID, err := resolvePatientIDParam(raw)
+	if err != nil {
+		http.Error(w, "patient not found", http.StatusNotFound)
+		return
+	}
+	// Translate numeric patient ID → case_no (patno). Do NOT fallback to numeric patientID.
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	hasPatno := patno != ""
+
 	// First, load existing rows for categories that are NOT stored as summary bit-strings.
 	// Exclude categories which have dedicated patient_pe_* summary tables so we don't return
 	// or duplicate data for skin, genitourinary, digitalRectal, neurological and the
 	// summary-backed HEENT/Chest/Heart/Abdomen categories.
-	rows, err := db.Query(`SELECT id, patient_id, category, finding_code, finding_desc, is_checked, others_text
+	var rows *sql.Rows
+	rows, err = db.Query(`SELECT category, finding_code, finding_desc, is_checked, others_text
 		FROM tsekap_tbl_prof_pe_findings WHERE patient_id = ?
 		AND category NOT IN ('skin','genitourinary','digitalRectal','neurological','heent','chest','heart','abdomen')`, patientID)
 	if err != nil {
@@ -1863,8 +2294,7 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type FindingRow struct {
-		ID          int    `json:"id"`
-		PatientID   int    `json:"patient_id"`
+		Patno       string `json:"patno"`
 		Category    string `json:"category"`
 		FindingCode string `json:"finding_code"`
 		FindingDesc string `json:"finding_desc"`
@@ -1875,15 +2305,10 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 	list := []FindingRow{}
 	for rows.Next() {
 		var f FindingRow
-		rows.Scan(&f.ID, &f.PatientID, &f.Category, &f.FindingCode, &f.FindingDesc, &f.IsChecked, &f.OthersText)
+		rows.Scan(&f.Category, &f.FindingCode, &f.FindingDesc, &f.IsChecked, &f.OthersText)
+		f.Patno = patno
 		list = append(list, f)
 	}
-
-	// Now load skin findings from the summary table (if present), and expand into FindingRow entries
-	// Translate numeric patient ID → case_no (patno). Do NOT fallback to numeric patientID.
-	var patno string
-	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
-	hasPatno := patno != ""
 
 	// Load skin library order
 	libRows, libErr := db.Query("SELECT SKIN_ID, SKIN_DESC FROM tsekap_lib_skin_extremities ORDER BY SORT_NO, SKIN_ID")
@@ -1916,8 +2341,7 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 		}
 		code := "skin_" + s.ID
 		list = append(list, FindingRow{
-			ID:          0,
-			PatientID:   0,
+			Patno:       patno,
 			Category:    "skin",
 			FindingCode: code,
 			FindingDesc: s.Desc,
@@ -1929,8 +2353,7 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 	// If there are saved 'others' text, append an 'others' row
 	if others.Valid && others.String != "" {
 		list = append(list, FindingRow{
-			ID:          0,
-			PatientID:   0,
+			Patno:       patno,
 			Category:    "skin",
 			FindingCode: "others",
 			FindingDesc: "Others",
@@ -1969,8 +2392,7 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 		}
 		code := "genitourinary_" + g.ID
 		list = append(list, FindingRow{
-			ID:          0,
-			PatientID:   0,
+			Patno:       patno,
 			Category:    "genitourinary",
 			FindingCode: code,
 			FindingDesc: g.Desc,
@@ -1981,8 +2403,7 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 
 	if guOthers.Valid && guOthers.String != "" {
 		list = append(list, FindingRow{
-			ID:          0,
-			PatientID:   0,
+			Patno:       patno,
 			Category:    "genitourinary",
 			FindingCode: "others",
 			FindingDesc: "Others",
@@ -2021,8 +2442,7 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 		}
 		code := "digitalRectal_" + d.ID
 		list = append(list, FindingRow{
-			ID:          0,
-			PatientID:   0,
+			Patno:       patno,
 			Category:    "digitalRectal",
 			FindingCode: code,
 			FindingDesc: d.Desc,
@@ -2033,8 +2453,7 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 
 	if drOthers.Valid && drOthers.String != "" {
 		list = append(list, FindingRow{
-			ID:          0,
-			PatientID:   0,
+			Patno:       patno,
 			Category:    "digitalRectal",
 			FindingCode: "others",
 			FindingDesc: "Others",
@@ -2073,8 +2492,7 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 		}
 		code := "neuro_" + n.ID
 		list = append(list, FindingRow{
-			ID:          0,
-			PatientID:   0,
+			Patno:       patno,
 			Category:    "neurological",
 			FindingCode: code,
 			FindingDesc: n.Desc,
@@ -2085,8 +2503,7 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 
 	if neuroOthers.Valid && neuroOthers.String != "" {
 		list = append(list, FindingRow{
-			ID:          0,
-			PatientID:   0,
+			Patno:       patno,
 			Category:    "neurological",
 			FindingCode: "others",
 			FindingDesc: "Others",
@@ -2124,8 +2541,7 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 			}
 			code := "chest_" + c.ID
 			list = append(list, FindingRow{
-				ID:          0,
-				PatientID:   0,
+				Patno:       patno,
 				Category:    "chest",
 				FindingCode: code,
 				FindingDesc: c.Desc,
@@ -2136,8 +2552,7 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 
 		if chestOthers.Valid && chestOthers.String != "" {
 			list = append(list, FindingRow{
-				ID:          0,
-				PatientID:   0,
+				Patno:       patno,
 				Category:    "chest",
 				FindingCode: "others",
 				FindingDesc: "Others",
@@ -2176,8 +2591,7 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 			}
 			code := "heart_" + h.ID
 			list = append(list, FindingRow{
-				ID:          0,
-				PatientID:   0,
+				Patno:       patno,
 				Category:    "heart",
 				FindingCode: code,
 				FindingDesc: h.Desc,
@@ -2188,8 +2602,7 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 
 		if heartOthers.Valid && heartOthers.String != "" {
 			list = append(list, FindingRow{
-				ID:          0,
-				PatientID:   0,
+				Patno:       patno,
 				Category:    "heart",
 				FindingCode: "others",
 				FindingDesc: "Others",
@@ -2228,8 +2641,7 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 			}
 			code := "abdomen_" + a.ID
 			list = append(list, FindingRow{
-				ID:          0,
-				PatientID:   0,
+				Patno:       patno,
 				Category:    "abdomen",
 				FindingCode: code,
 				FindingDesc: a.Desc,
@@ -2240,8 +2652,7 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 
 		if abdomenOthers.Valid && abdomenOthers.String != "" {
 			list = append(list, FindingRow{
-				ID:          0,
-				PatientID:   0,
+				Patno:       patno,
 				Category:    "abdomen",
 				FindingCode: "others",
 				FindingDesc: "Others",
@@ -2280,8 +2691,7 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 			}
 			code := "heent_" + h.ID
 			list = append(list, FindingRow{
-				ID:          0,
-				PatientID:   0,
+				Patno:       patno,
 				Category:    "heent",
 				FindingCode: code,
 				FindingDesc: h.Desc,
@@ -2292,8 +2702,7 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 
 		if heentOthers.Valid && heentOthers.String != "" {
 			list = append(list, FindingRow{
-				ID:          0,
-				PatientID:   0,
+				Patno:       patno,
 				Category:    "heent",
 				FindingCode: "others",
 				FindingDesc: "Others",
@@ -2308,7 +2717,12 @@ func getPhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 
 func savePhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	patientID := mux.Vars(r)["patientId"]
+	raw := mux.Vars(r)["patientId"]
+	patientID, err := resolvePatientIDParam(raw)
+	if err != nil {
+		http.Error(w, "patient not found", http.StatusNotFound)
+		return
+	}
 
 	var payload struct {
 		Category string           `json:"category"`
@@ -2769,7 +3183,8 @@ func savePhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Rebuild neuro library order
-		libRows, err := db.Query("SELECT NEURO_ID FROM tsekap_lib_neuro ORDER BY SORT_NO, NEURO_ID")
+		var libRows *sql.Rows
+		libRows, err = db.Query("SELECT NEURO_ID FROM tsekap_lib_neuro ORDER BY SORT_NO, NEURO_ID")
 		if err != nil {
 			log.Println("neuro lib query error:", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -2822,7 +3237,7 @@ func savePhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Default behaviour: Use DELETE + INSERT for simplicity and reliability
-	_, err := db.Exec(`DELETE FROM tsekap_tbl_prof_pe_findings WHERE patient_id = ? AND category = ?`,
+	_, err = db.Exec(`DELETE FROM tsekap_tbl_prof_pe_findings WHERE patient_id = ? AND category = ?`,
 		patientID, payload.Category)
 	if err != nil {
 		log.Println("Delete error:", err)
@@ -2832,7 +3247,7 @@ func savePhysicalExamFindings(w http.ResponseWriter, r *http.Request) {
 
 	// Insert all findings with explicit is_checked values (store 1 for checked, 0 for unchecked)
 	for _, f := range payload.Findings {
-		_, err := db.Exec(`INSERT INTO tsekap_tbl_prof_pe_findings 
+		_, err = db.Exec(`INSERT INTO tsekap_tbl_prof_pe_findings 
 			(patient_id, category, finding_code, finding_desc, is_checked, others_text)
 			VALUES (?, ?, ?, ?, ?, ?)`,
 			patientID, payload.Category, f.FindingCode, f.FindingDesc, f.IsChecked, f.OthersText)
@@ -2857,8 +3272,7 @@ type PhysicalExamFinding struct {
 
 // PhysicalExamGeneral - stores general survey, remarks, blood type
 type PhysicalExamGeneral struct {
-	ID            int    `json:"id"`
-	PatientID     int    `json:"patient_id"`
+	Patno         string `json:"patno"`
 	GeneralSurvey string `json:"general_survey"`
 	Remarks       string `json:"remarks"`
 	BloodType     string `json:"blood_type"`
