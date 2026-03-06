@@ -2137,14 +2137,12 @@ func ensureMedHistColumns() {}
 func createPhysicalExamTables() {
 	// General info table (general survey, remarks, blood type)
 	generalQuery := `CREATE TABLE IF NOT EXISTS tsekap_tbl_prof_pe_general (
-		id INT AUTO_INCREMENT PRIMARY KEY,
-		patient_id INT NOT NULL UNIQUE,
+		patno VARCHAR(50) NOT NULL PRIMARY KEY,
 		general_survey VARCHAR(50) DEFAULT 'awake',
 		remarks TEXT,
 		blood_type VARCHAR(10) DEFAULT 'A+',
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-		KEY (patient_id)
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 	)`
 	if _, err := db.Exec(generalQuery); err != nil {
 		log.Printf("Warning createPhysicalExamTables (general): %v", err)
@@ -2198,17 +2196,20 @@ func getPhysicalExamGeneral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// resolve patno (case_no) for this patient
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		patno = raw
+	}
+
 	var g PhysicalExamGeneral
-	// Load general fields (DB uses numeric patient_id internally)
+	// query by patno — no longer references patient_id
 	err = db.QueryRow(`SELECT general_survey, remarks, blood_type 
-		FROM tsekap_tbl_prof_pe_general WHERE patient_id = ?`, patientID).Scan(
+		FROM tsekap_tbl_prof_pe_general WHERE patno = ?`, patno).Scan(
 		&g.GeneralSurvey, &g.Remarks, &g.BloodType)
 
 	if err == sql.ErrNoRows {
-		// Return defaults if nothing saved yet
-		// still include patno for consistency
-		var patno string
-		db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
 		json.NewEncoder(w).Encode(PhysicalExamGeneral{
 			Patno:         patno,
 			GeneralSurvey: "awake",
@@ -2219,9 +2220,6 @@ func getPhysicalExamGeneral(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// attach case_no (patno) to response
-	var patno string
-	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
 	g.Patno = patno
 	json.NewEncoder(w).Encode(g)
 }
@@ -2235,6 +2233,13 @@ func savePhysicalExamGeneral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// resolve patno for this patient
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		patno = raw
+	}
+
 	var g PhysicalExamGeneral
 	if err := json.NewDecoder(r.Body).Decode(&g); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -2242,13 +2247,13 @@ func savePhysicalExamGeneral(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err = db.Exec(`INSERT INTO tsekap_tbl_prof_pe_general 
-		(patient_id, general_survey, remarks, blood_type)
+		(patno, general_survey, remarks, blood_type)
 		VALUES (?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 		general_survey = VALUES(general_survey),
 		remarks = VALUES(remarks),
 		blood_type = VALUES(blood_type)`,
-		patientID, g.GeneralSurvey, g.Remarks, g.BloodType)
+		patno, g.GeneralSurvey, g.Remarks, g.BloodType)
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
