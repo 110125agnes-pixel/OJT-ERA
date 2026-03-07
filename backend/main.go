@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -130,6 +132,24 @@ type VaccineLibItem struct {
 	VaccineName string `json:"vaccine_name"`
 }
 
+type AuthRequest struct {
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type User struct {
+	ID       int    `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+}
+
+type AuthResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	User    *User  `json:"user,omitempty"`
+}
+
 // ==================== MAIN ====================
 
 func main() {
@@ -182,6 +202,7 @@ func main() {
 	// Ensure patient_pe_heent summary table exists (HEENT findings stored as pipe-separated 1|0)
 	createPatientPeHeentTable()
 
+	
 	// Ensure patient_pe_chest summary table exists (Chest findings stored as pipe-separated 1|0)
 	createPatientPeChestTable()
 
@@ -193,8 +214,15 @@ func main() {
 	// Ensure patient_femalehistory table exists (stores Female tab data)
 	createPatientFemaleHistoryTable()
 
+	// Ensure tsekap_lib_surgical and patient_surgery tables exist (surgical history)
+	createSurgicalTables()
+
+	// Ensure accounts table exists (stores sign-up credentials)
+	createAccountsTable()
+
 	// Setup router
 	router := mux.NewRouter()
+	
 
 	// Inventory Routes
 	router.HandleFunc("/api/inventory", getInventory).Methods("GET")
@@ -276,7 +304,9 @@ func main() {
 	router.HandleFunc("/api/patients/{patientId}/female-history", getFemaleHistory).Methods("GET")
 	router.HandleFunc("/api/patients/{patientId}/female-history", saveFemaleHistory).Methods("POST")
 
-	////////
+	// Authentication routes
+	router.HandleFunc("/api/auth/signup", signUp).Methods("POST")
+	router.HandleFunc("/api/auth/login", login).Methods("POST")
 
 	// CORS middleware
 	handler := cors.New(cors.Options{
@@ -298,6 +328,86 @@ func getEnv(key, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+func hashPassword(password string) string {
+	h := sha256.Sum256([]byte(password))
+	return hex.EncodeToString(h[:])
+}
+
+func createAccountsTable() {
+	db.Exec(`CREATE TABLE IF NOT EXISTS accounts (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		username VARCHAR(100) NOT NULL UNIQUE,
+		email VARCHAR(255) NOT NULL,
+		password_hash VARCHAR(255) NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+	log.Println("✓ accounts table ready")
+}
+
+func signUp(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req AuthRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	username := strings.TrimSpace(req.Username)
+	email := strings.TrimSpace(req.Email)
+	password := req.Password
+	if username == "" || password == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(AuthResponse{Success: false, Message: "Username and password are required."})
+		return
+	}
+	_, err := db.Exec(
+		"INSERT INTO accounts (username, email, password_hash) VALUES (?, ?, ?)",
+		username, email, hashPassword(password),
+	)
+	if err != nil {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(AuthResponse{Success: false, Message: "Username already exists."})
+		return
+	}
+	json.NewEncoder(w).Encode(AuthResponse{Success: true, Message: "Account created successfully."})
+}
+
+func login(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req AuthRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	username := strings.TrimSpace(req.Username)
+	password := req.Password
+	if username == "" || password == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(AuthResponse{Success: false, Message: "Username and password are required."})
+		return
+	}
+	var user User
+	var storedHash string
+	err := db.QueryRow(
+		"SELECT id, username, email, password_hash FROM accounts WHERE username = ? LIMIT 1",
+		username,
+	).Scan(&user.ID, &user.Username, &user.Email, &storedHash)
+	if err == sql.ErrNoRows {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(AuthResponse{Success: false, Message: "Invalid username or password."})
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if storedHash != hashPassword(password) {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(AuthResponse{Success: false, Message: "Invalid username or password."})
+		return
+	}
+	json.NewEncoder(w).Encode(AuthResponse{Success: true, Message: "Login successful.", User: &user})
 }
 
 // ==================== INVENTORY HANDLERS ====================
@@ -520,11 +630,11 @@ func getPertinentPhysicalExam(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read from patient_pertinent_physical_exam keyed by patno
-	err := db.QueryRow(`SELECT systolic_bp, diastolic_bp, heart_rate, respiratory_rate,
+	err := db.QueryRow(`SELECT id, systolic_bp, diastolic_bp, heart_rate, respiratory_rate,
 			temperature, height_cm, weight_kg, bmi, pzscore, right_eye_vision, left_eye_vision,
 			length_pediatric_cm, head_circumference_cm, skinfold_thickness_cm, waist_cm, hip_cm, limbs_cm, arm_circumference_cm
 			FROM patient_pertinent_physical_exam WHERE patno = ?`, patno).Scan(
-		&ppe.SystolicBP, &ppe.DiastolicBP, &ppe.HeartRate, &ppe.RespiratoryRate,
+		&ppe.ID, &ppe.SystolicBP, &ppe.DiastolicBP, &ppe.HeartRate, &ppe.RespiratoryRate,
 		&ppe.Temperature, &ppe.Height, &ppe.Weight, &ppe.BMI, &ppe.PZScore, &ppe.RightEyeVision,
 		&ppe.LeftEyeVision, &ppe.LengthPediatric, &ppe.HeadCircumference, &ppe.SkinfoldThickness,
 		&ppe.Waist, &ppe.Hip, &ppe.Limbs, &ppe.ArmCircumference)
@@ -577,6 +687,7 @@ func savePertinentPhysicalExam(w http.ResponseWriter, r *http.Request) {
 // createPatientPertinentPhysicalExamTable creates a table to store Pertinent Physical Examination per patient.
 func createPatientPertinentPhysicalExamTable() {
 	db.Exec(`CREATE TABLE IF NOT EXISTS patient_pertinent_physical_exam (
+		id INT AUTO_INCREMENT PRIMARY KEY,
 		patno VARCHAR(50) NOT NULL PRIMARY KEY,
 		systolic_bp INT,
 		diastolic_bp INT,
@@ -1040,7 +1151,7 @@ func getSurgicalHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Load the ordered surgical library
-	libRows, err := db.Query("SELECT SURG_CODE, SURG_DESC FROM tsekap_lib_surgical WHERE LIB_STAT=1 ORDER BY SORT_NO, SURG_CODE")
+	libRows, err := db.Query("SELECT SURGERY_CODE, SURGERY_DESC FROM tsekap_lib_surgical WHERE LIB_STAT=1 ORDER BY SORT_NO, SURGERY_CODE")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1054,6 +1165,7 @@ func getSurgicalHistory(w http.ResponseWriter, r *http.Request) {
 	for libRows.Next() {
 		var s SurgLib
 		libRows.Scan(&s.Code, &s.Desc)
+		s.Desc = strings.TrimSpace(s.Desc)
 		libList = append(libList, s)
 	}
 
@@ -1091,7 +1203,7 @@ func saveSurgicalHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Load ordered library to build bit positions
-	libRows, err := db.Query("SELECT SURG_CODE FROM tsekap_lib_surgical WHERE LIB_STAT=1 ORDER BY SORT_NO, SURG_CODE")
+	libRows, err := db.Query("SELECT SURGERY_CODE FROM tsekap_lib_surgical WHERE LIB_STAT=1 ORDER BY SORT_NO, SURGERY_CODE")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -2110,10 +2222,65 @@ func createPatientsTable() {
 	}
 }
 
+// createSurgicalTables creates tsekap_lib_surgical (library) and patient_surgery (patient data) tables.
+// Seeds the library with common surgical procedures if it is empty.
+func createSurgicalTables() {
+	db.Exec(`CREATE TABLE IF NOT EXISTS tsekap_lib_surgical (
+		SURG_CODE VARCHAR(20) NOT NULL PRIMARY KEY,
+		SURG_DESC VARCHAR(200) NOT NULL,
+		LIB_STAT TINYINT(1) NOT NULL DEFAULT 1,
+		SORT_NO INT NOT NULL DEFAULT 0
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+
+	var count int
+	db.QueryRow("SELECT COUNT(*) FROM tsekap_lib_surgical").Scan(&count)
+	if count == 0 {
+		db.Exec(`INSERT INTO tsekap_lib_surgical (SURG_CODE, SURG_DESC, LIB_STAT, SORT_NO) VALUES
+			('NONE',   'None',                                              1,  0),
+			('APPY',   'Appendectomy',                                       1,  1),
+			('CHOLY',  'Cholecystectomy',                                    1,  2),
+			('CSEC',   'Cesarean Section',                                   1,  3),
+			('HYST',   'Hysterectomy',                                       1,  4),
+			('MAST',   'Mastectomy',                                         1,  5),
+			('THYR',   'Thyroidectomy',                                      1,  6),
+			('CABG',   'Coronary Artery Bypass Graft (CABG)',                1,  7),
+			('PTCA',   'Percutaneous Transluminal Coronary Angioplasty',     1,  8),
+			('AVR',    'Aortic Valve Replacement',                           1,  9),
+			('MVR',    'Mitral Valve Replacement',                           1, 10),
+			('NEPH',   'Nephrectomy',                                        1, 11),
+			('PROS',   'Prostatectomy',                                      1, 12),
+			('HERN',   'Hernia Repair',                                      1, 13),
+			('COLEC',  'Colectomy',                                          1, 14),
+			('GAST',   'Gastrectomy',                                        1, 15),
+			('SPLEN',  'Splenectomy',                                        1, 16),
+			('PNEU',   'Pneumonectomy',                                      1, 17),
+			('LOBE',   'Lobectomy',                                          1, 18),
+			('AMPU',   'Amputation',                                         1, 19),
+			('ORIF',   'Open Reduction Internal Fixation (ORIF)',            1, 20),
+			('THR',    'Total Hip Replacement',                              1, 21),
+			('TKR',    'Total Knee Replacement',                             1, 22),
+			('CATA',   'Cataract Extraction',                                1, 23),
+			('TONS',   'Tonsillectomy',                                      1, 24),
+			('CRAN',   'Craniotomy',                                         1, 25),
+			('DISC',   'Discectomy',                                         1, 26),
+			('ENDO',   'Endoscopy / Colonoscopy',                            1, 27),
+			('OTHERS', 'Others',                                             1, 99)`)
+	}
+
+	db.Exec(`CREATE TABLE IF NOT EXISTS patient_surgery (
+		patno      VARCHAR(50)   NOT NULL PRIMARY KEY,
+		surg_code  VARCHAR(2000) NOT NULL DEFAULT '',
+		date_added DATETIME,
+		added_by   VARCHAR(50)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+
+	log.Println("✓ tsekap_lib_surgical and patient_surgery tables ready")
+}
+
 // Library endpoint: surgical options
 func getSurgicalLib(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	rows, err := db.Query("SELECT SURG_CODE, SURG_DESC FROM tsekap_lib_surgical WHERE LIB_STAT=1 ORDER BY SORT_NO, SURG_CODE")
+	rows, err := db.Query("SELECT SURGERY_CODE, SURGERY_DESC FROM tsekap_lib_surgical WHERE LIB_STAT=1 ORDER BY SORT_NO, SURGERY_CODE")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -2129,7 +2296,7 @@ func getSurgicalLib(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var code, desc string
 		rows.Scan(&code, &desc)
-		list = append(list, SurgItem{Code: code, Desc: desc})
+		list = append(list, SurgItem{Code: code, Desc: strings.TrimSpace(desc)})
 	}
 	json.NewEncoder(w).Encode(list)
 }

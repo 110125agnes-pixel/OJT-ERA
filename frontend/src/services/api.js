@@ -2,6 +2,19 @@ import axios from 'axios';
 
 const API_BASE_URL = '/api';
 
+
+// Auth API service
+export const authService = {
+  login: async (payload) => {
+    const response = await axios.post(`${API_BASE_URL}/auth/login`, payload);
+    return response.data;
+  },
+  signup: async (payload) => {
+    const response = await axios.post(`${API_BASE_URL}/auth/signup`, payload);
+    return response.data;
+  },
+};
+
 // Item API service
 export const itemService = {
   // Get all items
