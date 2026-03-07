@@ -41,6 +41,7 @@ type SocialHistory struct {
 type PertinentPhysicalExam struct {
 	ID                int     `json:"id"`
 	PatientID         int     `json:"patient_id"`
+	Patno             string  `json:"patno"`
 	SystolicBP        int     `json:"systolic_bp"`
 	DiastolicBP       int     `json:"diastolic_bp"`
 	HeartRate         int     `json:"heart_rate"`
@@ -59,6 +60,7 @@ type PertinentPhysicalExam struct {
 	Hip               float64 `json:"hip"`
 	Limbs             float64 `json:"limbs"`
 	ArmCircumference  float64 `json:"arm_circumference"`
+	Remarks           string  `json:"remarks"`
 }
 
 type MedicalHistoryItem struct {
@@ -219,6 +221,12 @@ func main() {
 	router.HandleFunc("/api/patients/{patientId}/physical-exam/general", savePhysicalExamGeneral).Methods("POST")
 	router.HandleFunc("/api/patients/{patientId}/physical-exam/findings", getPhysicalExamFindings).Methods("GET")
 	router.HandleFunc("/api/patients/{patientId}/physical-exam/findings", savePhysicalExamFindings).Methods("POST")
+
+	// Pertinent physical exam admin CRUD (by patno)
+	router.HandleFunc("/api/pertinent-physical-exams", listPertinentEntries).Methods("GET")
+	router.HandleFunc("/api/pertinent-physical-exam/{patno}", getPertinentByPatno).Methods("GET")
+	router.HandleFunc("/api/pertinent-physical-exam/{patno}", updatePertinentByPatno).Methods("PUT")
+	router.HandleFunc("/api/pertinent-physical-exam/{patno}", deletePertinentByPatno).Methods("DELETE")
 	// Surgical library
 	router.HandleFunc("/api/lib/surgery", getSurgicalLib).Methods("GET")
 	// Digital rectal library
@@ -497,12 +505,20 @@ func saveSocialHistory(w http.ResponseWriter, r *http.Request) {
 func getPertinentPhysicalExam(w http.ResponseWriter, r *http.Request) {
 	patientID := mux.Vars(r)["patientId"]
 	var ppe PertinentPhysicalExam
-	// Read from the new table patient_pertinent_physical_exam. Column names in DB use _cm/_kg suffixes for measurements.
-	err := db.QueryRow(`SELECT id, patient_id, systolic_bp, diastolic_bp, heart_rate, respiratory_rate,
+	// Translate numeric patient ID -> case_no (patno). Do NOT fallback to numeric patientID.
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		http.Error(w, "patient has no case_no; not found", http.StatusNotFound)
+		return
+	}
+
+	// Read from patient_pertinent_physical_exam keyed by patno
+	err := db.QueryRow(`SELECT id, systolic_bp, diastolic_bp, heart_rate, respiratory_rate,
 			temperature, height_cm, weight_kg, bmi, pzscore, right_eye_vision, left_eye_vision,
 			length_pediatric_cm, head_circumference_cm, skinfold_thickness_cm, waist_cm, hip_cm, limbs_cm, arm_circumference_cm
-			FROM patient_pertinent_physical_exam WHERE patient_id = ?`, patientID).Scan(
-		&ppe.ID, &ppe.PatientID, &ppe.SystolicBP, &ppe.DiastolicBP, &ppe.HeartRate, &ppe.RespiratoryRate,
+			FROM patient_pertinent_physical_exam WHERE patno = ?`, patno).Scan(
+		&ppe.ID, &ppe.SystolicBP, &ppe.DiastolicBP, &ppe.HeartRate, &ppe.RespiratoryRate,
 		&ppe.Temperature, &ppe.Height, &ppe.Weight, &ppe.BMI, &ppe.PZScore, &ppe.RightEyeVision,
 		&ppe.LeftEyeVision, &ppe.LengthPediatric, &ppe.HeadCircumference, &ppe.SkinfoldThickness,
 		&ppe.Waist, &ppe.Hip, &ppe.Limbs, &ppe.ArmCircumference)
@@ -520,29 +536,34 @@ func savePertinentPhysicalExam(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// Translate numeric patient ID → case_no (patno). Do NOT fallback to numeric patientID.
+	var patno string
+	db.QueryRow("SELECT case_no FROM patients WHERE id = ?", patientID).Scan(&patno)
+	if patno == "" {
+		http.Error(w, "patient has no case_no; cannot save", http.StatusBadRequest)
+		return
+	}
 
-	var exists int
-	db.QueryRow("SELECT COUNT(*) FROM patient_pertinent_physical_exam WHERE patient_id = ?", patientID).Scan(&exists)
-
-	if exists > 0 {
-		db.Exec(`UPDATE patient_pertinent_physical_exam SET systolic_bp=?, diastolic_bp=?, heart_rate=?,
-			respiratory_rate=?, temperature=?, height_cm=?, weight_kg=?, bmi=?, pzscore=?, right_eye_vision=?,
-			left_eye_vision=?, length_pediatric_cm=?, head_circumference_cm=?, skinfold_thickness_cm=?,
-			waist_cm=?, hip_cm=?, limbs_cm=?, arm_circumference_cm=? WHERE patient_id=?`,
-			ppe.SystolicBP, ppe.DiastolicBP, ppe.HeartRate, ppe.RespiratoryRate, ppe.Temperature,
-			ppe.Height, ppe.Weight, ppe.BMI, ppe.PZScore, ppe.RightEyeVision, ppe.LeftEyeVision,
-			ppe.LengthPediatric, ppe.HeadCircumference, ppe.SkinfoldThickness, ppe.Waist, ppe.Hip,
-			ppe.Limbs, ppe.ArmCircumference, patientID)
-	} else {
-		db.Exec(`INSERT INTO patient_pertinent_physical_exam (patient_id, systolic_bp, diastolic_bp, heart_rate,
+	// UPSERT into patient_pertinent_physical_exam keyed by patno
+	_, err := db.Exec(`INSERT INTO patient_pertinent_physical_exam (patno, systolic_bp, diastolic_bp, heart_rate,
 			respiratory_rate, temperature, height_cm, weight_kg, bmi, pzscore, right_eye_vision,
 			left_eye_vision, length_pediatric_cm, head_circumference_cm, skinfold_thickness_cm,
-			waist_cm, hip_cm, limbs_cm, arm_circumference_cm)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			patientID, ppe.SystolicBP, ppe.DiastolicBP, ppe.HeartRate, ppe.RespiratoryRate, ppe.Temperature,
-			ppe.Height, ppe.Weight, ppe.BMI, ppe.PZScore, ppe.RightEyeVision, ppe.LeftEyeVision,
-			ppe.LengthPediatric, ppe.HeadCircumference, ppe.SkinfoldThickness, ppe.Waist, ppe.Hip,
-			ppe.Limbs, ppe.ArmCircumference)
+			waist_cm, hip_cm, limbs_cm, arm_circumference_cm, remarks, date_added, added_by)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'system')
+			ON DUPLICATE KEY UPDATE systolic_bp = VALUES(systolic_bp), diastolic_bp = VALUES(diastolic_bp),
+			heart_rate = VALUES(heart_rate), respiratory_rate = VALUES(respiratory_rate), temperature = VALUES(temperature),
+			height_cm = VALUES(height_cm), weight_kg = VALUES(weight_kg), bmi = VALUES(bmi), pzscore = VALUES(pzscore),
+			right_eye_vision = VALUES(right_eye_vision), left_eye_vision = VALUES(left_eye_vision),
+			length_pediatric_cm = VALUES(length_pediatric_cm), head_circumference_cm = VALUES(head_circumference_cm),
+			skinfold_thickness_cm = VALUES(skinfold_thickness_cm), waist_cm = VALUES(waist_cm), hip_cm = VALUES(hip_cm),
+			limbs_cm = VALUES(limbs_cm), arm_circumference_cm = VALUES(arm_circumference_cm), remarks = VALUES(remarks), date_added = NOW()`,
+		patno, ppe.SystolicBP, ppe.DiastolicBP, ppe.HeartRate, ppe.RespiratoryRate, ppe.Temperature,
+		ppe.Height, ppe.Weight, ppe.BMI, ppe.PZScore, ppe.RightEyeVision, ppe.LeftEyeVision,
+		ppe.LengthPediatric, ppe.HeadCircumference, ppe.SkinfoldThickness, ppe.Waist, ppe.Hip,
+		ppe.Limbs, ppe.ArmCircumference, "")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	json.NewEncoder(w).Encode(ppe)
 }
@@ -551,7 +572,7 @@ func savePertinentPhysicalExam(w http.ResponseWriter, r *http.Request) {
 func createPatientPertinentPhysicalExamTable() {
 	db.Exec(`CREATE TABLE IF NOT EXISTS patient_pertinent_physical_exam (
 		id INT AUTO_INCREMENT PRIMARY KEY,
-		patient_id INT NOT NULL UNIQUE,
+		patno VARCHAR(50) NOT NULL PRIMARY KEY,
 		systolic_bp INT,
 		diastolic_bp INT,
 		heart_rate INT,
@@ -571,12 +592,181 @@ func createPatientPertinentPhysicalExamTable() {
 		limbs_cm DECIMAL(6,2),
 		arm_circumference_cm DECIMAL(6,2),
 		remarks TEXT,
+		date_added DATETIME,
+		added_by VARCHAR(50),
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-		KEY (patient_id)
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
 	log.Println("✓ patient_pertinent_physical_exam table ready")
 }
+
+// listPertinentEntries returns all pertinent PE rows (admin use)
+func listPertinentEntries(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	rows, err := db.Query(`SELECT patno, systolic_bp, diastolic_bp, heart_rate, respiratory_rate,
+		temperature, height_cm, weight_kg, bmi, pzscore, right_eye_vision, left_eye_vision,
+		length_pediatric_cm, head_circumference_cm, skinfold_thickness_cm, waist_cm, hip_cm, limbs_cm, arm_circumference_cm, remarks, date_added, added_by
+		FROM patient_pertinent_physical_exam ORDER BY date_added DESC LIMIT 1000`)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var list []map[string]interface{}
+	for rows.Next() {
+		var patno sql.NullString
+		var remarks sql.NullString
+		var addedBy sql.NullString
+		var dateAdded sql.NullTime
+		var systolic, diastolic, hr, rr sql.NullInt64
+		var temp, height, weight, bmi sql.NullFloat64
+		var pzscore sql.NullInt64
+		var rev, lev sql.NullString
+		var lengthPd, head, skinfold, waist, hip, limbs, arm sql.NullFloat64
+
+		rows.Scan(&patno, &systolic, &diastolic, &hr, &rr, &temp, &height, &weight, &bmi, &pzscore,
+			&rev, &lev, &lengthPd, &head, &skinfold, &waist, &hip, &limbs, &arm, &remarks, &dateAdded, &addedBy)
+
+		m := map[string]interface{}{
+			"patno": patno.String,
+			"systolic_bp": systolic.Int64,
+			"diastolic_bp": diastolic.Int64,
+			"heart_rate": hr.Int64,
+			"respiratory_rate": rr.Int64,
+			"temperature": temp.Float64,
+			"height_cm": height.Float64,
+			"weight_kg": weight.Float64,
+			"bmi": bmi.Float64,
+			"pzscore": pzscore.Int64,
+			"right_eye_vision": rev.String,
+			"left_eye_vision": lev.String,
+			"date_added": nil,
+			"added_by": addedBy.String,
+			"remarks": remarks.String,
+		}
+		if dateAdded.Valid {
+			m["date_added"] = dateAdded.Time
+		}
+		list = append(list, m)
+	}
+	json.NewEncoder(w).Encode(list)
+}
+
+// getPertinentByPatno returns a single pertinent PE row by patno
+func getPertinentByPatno(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	patno := mux.Vars(r)["patno"]
+	var p PertinentPhysicalExam
+	// Read row keyed by patno
+	var remarks sql.NullString
+	var addedBy sql.NullString
+	var dateAdded sql.NullTime
+	var patnoDB sql.NullString
+	var systolic, diastolic, hr, rr sql.NullInt64
+	var temp, height, weight, bmi sql.NullFloat64
+	var pzscore sql.NullInt64
+	var rev, lev sql.NullString
+	var lengthPd, head, skinfold, waist, hip, limbs, arm sql.NullFloat64
+
+	err := db.QueryRow(`SELECT patno, systolic_bp, diastolic_bp, heart_rate, respiratory_rate,
+			temperature, height_cm, weight_kg, bmi, pzscore, right_eye_vision, left_eye_vision,
+			length_pediatric_cm, head_circumference_cm, skinfold_thickness_cm, waist_cm, hip_cm, limbs_cm, arm_circumference_cm, remarks, date_added, added_by
+			FROM patient_pertinent_physical_exam WHERE patno = ?`, patno).Scan(
+		&patnoDB, &systolic, &diastolic, &hr, &rr, &temp, &height, &weight, &bmi, &pzscore,
+		&rev, &lev, &lengthPd, &head, &skinfold, &waist, &hip, &limbs, &arm, &remarks, &dateAdded, &addedBy)
+	if err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	p.Patno = patnoDB.String
+	if systolic.Valid {
+		p.SystolicBP = int(systolic.Int64)
+	}
+	if diastolic.Valid {
+		p.DiastolicBP = int(diastolic.Int64)
+	}
+	if hr.Valid {
+		p.HeartRate = int(hr.Int64)
+	}
+	if rr.Valid {
+		p.RespiratoryRate = int(rr.Int64)
+	}
+	if temp.Valid {
+		p.Temperature = temp.Float64
+	}
+	if height.Valid {
+		p.Height = height.Float64
+	}
+	if weight.Valid {
+		p.Weight = weight.Float64
+	}
+	if bmi.Valid {
+		p.BMI = bmi.Float64
+	}
+	if pzscore.Valid {
+		p.PZScore = int(pzscore.Int64)
+	}
+	p.RightEyeVision = rev.String
+	p.LeftEyeVision = lev.String
+	p.LengthPediatric = lengthPd.Float64
+	p.HeadCircumference = head.Float64
+	p.SkinfoldThickness = skinfold.Float64
+	p.Waist = waist.Float64
+	p.Hip = hip.Float64
+	p.Limbs = limbs.Float64
+	p.ArmCircumference = arm.Float64
+	p.Remarks = remarks.String
+	json.NewEncoder(w).Encode(p)
+}
+
+// updatePertinentByPatno upserts a pertinent PE row by patno (PUT)
+func updatePertinentByPatno(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	patno := mux.Vars(r)["patno"]
+	var p PertinentPhysicalExam
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	_, err := db.Exec(`INSERT INTO patient_pertinent_physical_exam (patno, systolic_bp, diastolic_bp, heart_rate,
+			respiratory_rate, temperature, height_cm, weight_kg, bmi, pzscore, right_eye_vision,
+			left_eye_vision, length_pediatric_cm, head_circumference_cm, skinfold_thickness_cm,
+			waist_cm, hip_cm, limbs_cm, arm_circumference_cm, remarks, date_added, added_by)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'system')
+			ON DUPLICATE KEY UPDATE systolic_bp = VALUES(systolic_bp), diastolic_bp = VALUES(diastolic_bp),
+			heart_rate = VALUES(heart_rate), respiratory_rate = VALUES(respiratory_rate), temperature = VALUES(temperature),
+			height_cm = VALUES(height_cm), weight_kg = VALUES(weight_kg), bmi = VALUES(bmi), pzscore = VALUES(pzscore),
+			right_eye_vision = VALUES(right_eye_vision), left_eye_vision = VALUES(left_eye_vision),
+			length_pediatric_cm = VALUES(length_pediatric_cm), head_circumference_cm = VALUES(head_circumference_cm),
+			skinfold_thickness_cm = VALUES(skinfold_thickness_cm), waist_cm = VALUES(waist_cm), hip_cm = VALUES(hip_cm),
+			limbs_cm = VALUES(limbs_cm), arm_circumference_cm = VALUES(arm_circumference_cm), remarks = VALUES(remarks), date_added = NOW()`,
+		patno, p.SystolicBP, p.DiastolicBP, p.HeartRate, p.RespiratoryRate, p.Temperature,
+		p.Height, p.Weight, p.BMI, p.PZScore, p.RightEyeVision, p.LeftEyeVision,
+		p.LengthPediatric, p.HeadCircumference, p.SkinfoldThickness, p.Waist, p.Hip,
+		p.Limbs, p.ArmCircumference, p.Remarks)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"message": "Saved"})
+}
+
+// deletePertinentByPatno removes a row by patno
+func deletePertinentByPatno(w http.ResponseWriter, r *http.Request) {
+	patno := mux.Vars(r)["patno"]
+	_, err := db.Exec("DELETE FROM patient_pertinent_physical_exam WHERE patno = ?", patno)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"message": "Deleted"})
+}
+
+// helper to map Remarks into p (used only in read path; simplified)
+
 
 // ==================== CHECKBOX HISTORY HANDLERS ====================
 

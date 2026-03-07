@@ -94,3 +94,27 @@ export const libService = {
     return response.data;
   },
 };
+
+// Pertinent Physical Exam admin CRUD service (operate by patno)
+export const pertinentService = {
+  // List recent entries
+  list: async () => {
+    const response = await axios.get(`${API_BASE_URL}/pertinent-physical-exams`);
+    return response.data;
+  },
+  // Get a single record by patno
+  getByPatno: async (patno) => {
+    const response = await axios.get(`${API_BASE_URL}/pertinent-physical-exam/${encodeURIComponent(patno)}`);
+    return response.data;
+  },
+  // Update / upsert a record by patno
+  updateByPatno: async (patno, payload) => {
+    const response = await axios.put(`${API_BASE_URL}/pertinent-physical-exam/${encodeURIComponent(patno)}`, payload);
+    return response.data;
+  },
+  // Delete a record by patno
+  deleteByPatno: async (patno) => {
+    const response = await axios.delete(`${API_BASE_URL}/pertinent-physical-exam/${encodeURIComponent(patno)}`);
+    return response.data;
+  }
+};
