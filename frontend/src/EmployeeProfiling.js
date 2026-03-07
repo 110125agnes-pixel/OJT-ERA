@@ -81,19 +81,28 @@ function EmployeeProfiling() {
 
   useEffect(() => {
     fetchEmployees();
+
+    // Poll the server every 5 seconds to pick up external DB changes
+    const interval = setInterval(() => {
+      fetchEmployees(true); // silent poll (no loading spinner)
+    }, 5000);
+
+    return () => clearInterval(interval);
   }, []);
 
-  const fetchEmployees = async () => {
+  // fetchEmployees optionally accepts a `silent` flag. When `silent` is true
+  // the loading state isn't toggled so the UI won't flicker during background polling.
+  const fetchEmployees = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const data = await itemService.getAllItems();
       setEmployees(data || []);
       setError('');
     } catch (err) {
-      setError('Failed to fetch employees: ' + (err.response?.data?.error || err.message));
+      if (!silent) setError('Failed to fetch employees: ' + (err.response?.data?.error || err.message));
       console.error('Error fetching employees:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 

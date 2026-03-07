@@ -45,18 +45,41 @@ const PertinentPhysicalExamination = ({ patientId }) => {
         }
     }, [formData.height, formData.weight]);
 
-    const fetchPertinentPhysicalExam = async () => {
+    const fetchPertinentPhysicalExam = async (silent = false) => {
         try {
             const response = await fetch(`http://localhost:8080/api/patients/${patientId}/pertinent-physical-exam`);
             if (response.ok) {
                 const data = await response.json();
-                setFormData(data);
+                // Normalize: convert numeric 0 → '' so inputs stay blank for unset fields
+                const normalized = {
+                    systolic_bp:        data.systolic_bp        || '',
+                    diastolic_bp:       data.diastolic_bp       || '',
+                    heart_rate:         data.heart_rate         || '',
+                    respiratory_rate:   data.respiratory_rate   || '',
+                    temperature:        data.temperature        || '',
+                    height:             data.height             || '',
+                    weight:             data.weight             || '',
+                    bmi:                data.bmi                || '',
+                    pzscore:            data.pzscore            || '',
+                    left_eye_vision:    data.left_eye_vision    || '',
+                    right_eye_vision:   data.right_eye_vision   || '',
+                    length_pediatric:   data.length_pediatric   || '',
+                    head_circumference: data.head_circumference || '',
+                    skinfold_thickness: data.skinfold_thickness || '',
+                    waist:              data.waist              || '',
+                    hip:                data.hip                || '',
+                    limbs:              data.limbs              || '',
+                    arm_circumference:  data.arm_circumference  || '',
+                };
+                setFormData(normalized);
                 setHasExistingData(true);
-                setMessage('Existing data loaded');
-                setTimeout(() => setMessage(''), 3000);
+                if (!silent) {
+                    setMessage('Existing data loaded');
+                    setTimeout(() => setMessage(''), 3000);
+                }
             }
         } catch (error) {
-            console.log('No existing pertinent physical examination found');
+            if (!silent) console.log('No existing pertinent physical examination found');
             setHasExistingData(false);
         }
     };
@@ -100,7 +123,7 @@ const PertinentPhysicalExamination = ({ patientId }) => {
             });
             payload.patient_id = parseInt(patientId, 10);
 
-            const response = await fetch(`/api/patients/${patientId}/pertinent-physical-exam`, {
+            const response = await fetch(`http://localhost:8080/api/patients/${patientId}/pertinent-physical-exam`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -109,10 +132,11 @@ const PertinentPhysicalExamination = ({ patientId }) => {
             });
 
             if (response.ok) {
-                const savedData = await response.json();
                 setHasExistingData(true);
                 setMessage('Pertinent physical examination saved successfully!');
                 setTimeout(() => setMessage(''), 3000);
+                // Reload from DB so the form reflects exactly what was persisted
+                fetchPertinentPhysicalExam(true);
             } else {
                 const errorData = await response.text();
                 setMessage('Error saving data: ' + errorData);
