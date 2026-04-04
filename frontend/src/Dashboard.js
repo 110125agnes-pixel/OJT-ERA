@@ -54,7 +54,7 @@ function Dashboard({ onLogout }) {
             👥 Patients
           </button>
           <button
-            className={activeModule === 'patientHistory' ? 'nav-item active' : 'nav-item'}
+            className={`${activeModule === 'patientHistory' ? 'nav-item active' : 'nav-item'} patient-history-btn`}
             onClick={() => setActiveModule('patientHistory')}
           >
             🩺 Patient History

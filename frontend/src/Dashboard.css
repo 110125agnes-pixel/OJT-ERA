@@ -154,3 +154,8 @@
   margin: 0;
   line-height: 1.6;
 }
+
+/* Hide the Patient History nav button (visual only) */
+.nav-item.patient-history-btn {
+  display: none;
+}
