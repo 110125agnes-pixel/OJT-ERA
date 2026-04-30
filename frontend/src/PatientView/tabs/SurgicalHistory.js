@@ -15,15 +15,23 @@ function SurgicalHistory({ patientId }) {
   const [lib, setLib] = useState([]);
   // selected: map of { [SURG_CODE]: true/false } for the current patient
   const [selected, setSelected] = useState({});
+  const [loadingLib, setLoadingLib] = useState(false);
+  const [errorLib, setErrorLib] = useState('');
+  const [saving, setSaving] = useState(false);
 
   // fetchLibrary — loads all active surgery types from tsekap_lib_surgical (LIB_STAT=1)
   // Endpoint: GET /api/lib/surgery → [{ code, desc }] ordered by SORT_NO, SURG_CODE
   const fetchLibrary = useCallback(async () => {
+    setLoadingLib(true);
+    setErrorLib('');
     try {
       const res = await axios.get('/api/lib/surgery');
       setLib(res.data || []);
     } catch (err) {
       console.error('Failed to fetch surgical library', err);
+      setErrorLib('Failed to load surgical library');
+    } finally {
+      setLoadingLib(false);
     }
   }, []);
 
@@ -62,14 +70,28 @@ function SurgicalHistory({ patientId }) {
     const libToUse = currentLib || lib;
     if (!libToUse || libToUse.length === 0) return;
     try {
+      setSaving(true);
       const items = libToUse.map((s) => ({
         SurgeryCode: s.code,
         SurgeryName: s.desc,
         IsChecked: !!nextSelected[s.code],
       }));
       await axios.post(`/api/patients/${patientId}/surgical-history`, items);
+      // update localStorage and notify other components (SurgerySummary)
+      try {
+        const selectedSurgeries = libToUse
+          .filter((s) => !!nextSelected[s.code])
+          .map((s) => ({ code: s.code, name: s.desc }));
+        const payload = { selectedSurgeries, notes: '' };
+        localStorage.setItem('surgicalHistorySelections', JSON.stringify(payload));
+        window.dispatchEvent(new CustomEvent('surgicalHistoryUpdated', { detail: payload }));
+      } catch (e) {
+        // ignore storage errors
+      }
     } catch (err) {
       console.error('Failed to save surgical selections', err);
+    } finally {
+      setSaving(false);
     }
   }, [patientId, lib]);
 
@@ -98,6 +120,19 @@ function SurgicalHistory({ patientId }) {
     });
   };
 
+  // Keep shared storage in sync so summary components in the same window can read it
+  useEffect(() => {
+    if (!lib || lib.length === 0) return;
+    try {
+      const selectedSurgeries = lib.filter((s) => !!selected[s.code]).map((s) => ({ code: s.code, name: s.desc }));
+      const payload = { selectedSurgeries, notes: '' };
+      localStorage.setItem('surgicalHistorySelections', JSON.stringify(payload));
+      window.dispatchEvent(new CustomEvent('surgicalHistoryUpdated', { detail: payload }));
+    } catch (e) {
+      // ignore storage errors
+    }
+  }, [lib, selected]);
+
   return (
     <div className="surgical-history-container">
       <div className="surgical-header">
@@ -105,42 +140,52 @@ function SurgicalHistory({ patientId }) {
       </div>
 
       <div className="surgical-history-section">
-        <div className="surgical-checkboxes">
-          <div className="checkbox-group">
-            {lib.map((s) => (
-              <label key={s.code}>
-                <input
-                  type="checkbox"
-                  checked={!!selected[s.code]}
-                  onChange={(e) => handleToggle(s.code, e.target.checked)}
-                />
-                <span>{s.desc}</span>
-              </label>
-            ))}
-          </div>
-        </div>
+        {loadingLib ? (
+          <div className="surgical-loading">Loading surgical procedures...</div>
+        ) : errorLib ? (
+          <div className="surgical-error">{errorLib}</div>
+        ) : lib.length === 0 ? (
+          <div className="surgical-no-data">No surgical procedures available.</div>
+        ) : (
+          <>
+            <div className="surgical-checkboxes">
+              <div className="checkbox-group">
+                {lib.map((s) => (
+                  <label key={s.code}>
+                    <input
+                      type="checkbox"
+                      checked={!!selected[s.code]}
+                      onChange={(e) => handleToggle(s.code, e.target.checked)}
+                    />
+                    <span>{s.desc}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
 
-        <div className="surgical-codes-table">
-          <table>
-            <thead>
-              <tr>
-                <th>Code</th>
-                <th>Description</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lib.map((s) => {
-                if (!selected[s.code]) return null;
-                return (
-                  <tr key={s.code}>
-                    <td>{s.code}</td>
-                    <td>{s.desc}</td>
+            <div className="surgical-codes-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Code</th>
+                    <th>Description</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody>
+                  {lib.map((s) => {
+                    if (!selected[s.code]) return null;
+                    return (
+                      <tr key={s.code}>
+                        <td>{s.code}</td>
+                        <td>{s.desc}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

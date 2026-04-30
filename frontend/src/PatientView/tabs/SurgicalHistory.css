@@ -14,6 +14,56 @@
   background: white;
 }
 
+.surgical-history-section {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 16px;
+  padding: 1rem;
+}
+
+.surgical-checkboxes {
+  background: #fafafa;
+  border: 1px solid #e6e6e6;
+  border-radius: 4px;
+  padding: 0.5rem;
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.surgical-codes-table {
+  border: 1px solid #e6e6e6;
+  border-radius: 4px;
+  padding: 0.5rem;
+  background: white;
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.surgical-codes-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.surgical-codes-table th,
+.surgical-codes-table td {
+  padding: 0.5rem;
+  border-bottom: 1px solid #f0f0f0;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.surgical-loading,
+.surgical-error,
+.surgical-no-data {
+  padding: 1rem;
+  font-size: 0.95rem;
+  color: #666;
+}
+
+.surgical-error {
+  color: #c33;
+}
+
 /* Left Panel */
 .surgical-history-left {
   width: 280px;
