@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import { surgicalService } from '../../services/api';
 import './SurgicalHistory.css';
 
 // SurgicalHistory tab — displays all surgical procedures from tsekap_lib_surgical as checkboxes.
@@ -25,8 +25,8 @@ function SurgicalHistory({ patientId }) {
     setLoadingLib(true);
     setErrorLib('');
     try {
-      const res = await axios.get('/api/lib/surgery');
-      setLib(res.data || []);
+      const data = await surgicalService.getSurgicalLibrary();
+      setLib(data || []);
     } catch (err) {
       console.error('Failed to fetch surgical library', err);
       setErrorLib('Failed to load surgical library');
@@ -41,9 +41,9 @@ function SurgicalHistory({ patientId }) {
   const fetchPatientSelections = useCallback(async () => {
     if (!patientId) return;
     try {
-      const res = await axios.get(`/api/patients/${patientId}/surgical-history`);
+      const res = await surgicalService.getPatientSurgicalHistory(patientId);
       const map = {};
-      (res.data || []).forEach((it) => {
+      (res || []).forEach((it) => {
         map[it.SurgeryCode || it.surgery_code] = !!(it.IsChecked || it.is_checked);
       });
       setSelected(map);
@@ -76,7 +76,7 @@ function SurgicalHistory({ patientId }) {
         SurgeryName: s.desc,
         IsChecked: !!nextSelected[s.code],
       }));
-      await axios.post(`/api/patients/${patientId}/surgical-history`, items);
+      await surgicalService.savePatientSurgicalHistory(patientId, items);
       // update localStorage and notify other components (SurgerySummary)
       try {
         const selectedSurgeries = libToUse
@@ -137,6 +137,7 @@ function SurgicalHistory({ patientId }) {
     <div className="surgical-history-container">
       <div className="surgical-header">
         <h3>Surgical History Specifics</h3>
+        {saving && <div className="saving-indicator">Saving...</div>}
       </div>
 
       <div className="surgical-history-section">

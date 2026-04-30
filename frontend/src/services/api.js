@@ -1,6 +1,10 @@
 import axios from 'axios';
 
-const API_BASE_URL = '/api';
+// In development when running on localhost, call backend directly to avoid proxy issues.
+// In production, requests should go to the same origin under `/api`.
+const API_BASE_URL = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ? 'http://localhost:8080/api'
+  : '/api';
 
 
 // Auth API service

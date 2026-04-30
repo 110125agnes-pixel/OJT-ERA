@@ -202,7 +202,6 @@ func main() {
 	// Ensure patient_pe_heent summary table exists (HEENT findings stored as pipe-separated 1|0)
 	createPatientPeHeentTable()
 
-	
 	// Ensure patient_pe_chest summary table exists (Chest findings stored as pipe-separated 1|0)
 	createPatientPeChestTable()
 
@@ -222,7 +221,6 @@ func main() {
 
 	// Setup router
 	router := mux.NewRouter()
-	
 
 	// Inventory Routes
 	router.HandleFunc("/api/inventory", getInventory).Methods("GET")
@@ -308,9 +306,9 @@ func main() {
 	router.HandleFunc("/api/auth/signup", signUp).Methods("POST")
 	router.HandleFunc("/api/auth/login", login).Methods("POST")
 
-	// CORS middleware
+	// CORS middleware - allow both dev ports (3000 & 3001)
 	handler := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:3000"},
+		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:3001"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Content-Type", "Authorization"},
 		AllowCredentials: true,
@@ -745,21 +743,21 @@ func listPertinentEntries(w http.ResponseWriter, r *http.Request) {
 			&rev, &lev, &lengthPd, &head, &skinfold, &waist, &hip, &limbs, &arm, &remarks, &dateAdded, &addedBy)
 
 		m := map[string]interface{}{
-			"patno": patno.String,
-			"systolic_bp": systolic.Int64,
-			"diastolic_bp": diastolic.Int64,
-			"heart_rate": hr.Int64,
+			"patno":            patno.String,
+			"systolic_bp":      systolic.Int64,
+			"diastolic_bp":     diastolic.Int64,
+			"heart_rate":       hr.Int64,
 			"respiratory_rate": rr.Int64,
-			"temperature": temp.Float64,
-			"height_cm": height.Float64,
-			"weight_kg": weight.Float64,
-			"bmi": bmi.Float64,
-			"pzscore": pzscore.Int64,
+			"temperature":      temp.Float64,
+			"height_cm":        height.Float64,
+			"weight_kg":        weight.Float64,
+			"bmi":              bmi.Float64,
+			"pzscore":          pzscore.Int64,
 			"right_eye_vision": rev.String,
-			"left_eye_vision": lev.String,
-			"date_added": nil,
-			"added_by": addedBy.String,
-			"remarks": remarks.String,
+			"left_eye_vision":  lev.String,
+			"date_added":       nil,
+			"added_by":         addedBy.String,
+			"remarks":          remarks.String,
 		}
 		if dateAdded.Valid {
 			m["date_added"] = dateAdded.Time
@@ -1151,7 +1149,7 @@ func getSurgicalHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Load the ordered surgical library
-	libRows, err := db.Query("SELECT SURGERY_CODE, SURGERY_DESC FROM tsekap_lib_surgical WHERE LIB_STAT=1 ORDER BY SORT_NO, SURGERY_CODE")
+	libRows, err := db.Query("SELECT SURG_CODE, SURG_DESC FROM tsekap_lib_surgical WHERE LIB_STAT=1 ORDER BY SORT_NO, SURG_CODE")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1203,7 +1201,7 @@ func saveSurgicalHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Load ordered library to build bit positions
-	libRows, err := db.Query("SELECT SURGERY_CODE FROM tsekap_lib_surgical WHERE LIB_STAT=1 ORDER BY SORT_NO, SURGERY_CODE")
+	libRows, err := db.Query("SELECT SURG_CODE FROM tsekap_lib_surgical WHERE LIB_STAT=1 ORDER BY SORT_NO, SURG_CODE")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -2280,7 +2278,7 @@ func createSurgicalTables() {
 // Library endpoint: surgical options
 func getSurgicalLib(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	rows, err := db.Query("SELECT SURGERY_CODE, SURGERY_DESC FROM tsekap_lib_surgical WHERE LIB_STAT=1 ORDER BY SORT_NO, SURGERY_CODE")
+	rows, err := db.Query("SELECT SURG_CODE, SURG_DESC FROM tsekap_lib_surgical WHERE LIB_STAT=1 ORDER BY SORT_NO, SURG_CODE")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
